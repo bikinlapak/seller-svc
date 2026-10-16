@@ -11,6 +11,9 @@ pub struct Config {
     /// Endpoint GraphQL works-server, mis. `http://127.0.0.1:8000/graphql`.
     pub works_graphql_url: String,
     pub cors_allowed_origins: Vec<String>,
+    /// Kunci privat Ed25519 (PKCS#8 DER, base64) untuk token aksi. Kosong =
+    /// buat kunci sementara saat start; hanya untuk dev.
+    pub action_key_pkcs8: Option<Vec<u8>>,
 }
 
 impl Config {
@@ -37,13 +40,49 @@ impl Config {
             .filter(|s| !s.is_empty())
             .collect();
 
+        let action_key_pkcs8 = match get("SELLER_SVC_ACTION_KEY") {
+            Some(b64) if !b64.trim().is_empty() => Some(
+                base64_decode(b64.trim())
+                    .ok_or_else(|| AppError::Config("SELLER_SVC_ACTION_KEY bukan base64".into()))?,
+            ),
+            _ => None,
+        };
+
         Ok(Self {
             bind_addr,
             log_json,
             works_graphql_url,
             cors_allowed_origins,
+            action_key_pkcs8,
         })
     }
+}
+
+/// base64 standar (dengan atau tanpa padding). Satu fungsi kecil lebih murah
+/// daripada menarik crate hanya untuk membaca satu env var.
+fn base64_decode(s: &str) -> Option<Vec<u8>> {
+    const TABEL: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut nilai = [255u8; 256];
+    for (i, c) in TABEL.iter().enumerate() {
+        nilai[*c as usize] = i as u8;
+    }
+
+    let mut out = Vec::with_capacity(s.len() * 3 / 4);
+    let mut buf = 0u32;
+    let mut bit = 0u32;
+    for c in s.bytes().filter(|c| *c != b'=' && !c.is_ascii_whitespace()) {
+        let v = nilai[c as usize];
+        if v == 255 {
+            return None;
+        }
+        buf = (buf << 6) | u32::from(v);
+        bit += 6;
+        if bit >= 8 {
+            bit -= 8;
+            out.push((buf >> bit) as u8);
+        }
+    }
+    Some(out)
 }
 
 #[cfg(test)]
@@ -55,6 +94,29 @@ mod tests {
         let cfg = Config::from_lookup(|_| None).unwrap();
         assert_eq!(cfg.bind_addr.port(), 8080);
         assert_eq!(cfg.cors_allowed_origins, vec!["http://localhost:5173"]);
+    }
+
+    #[test]
+    fn action_key_kosong_berarti_kunci_sementara() {
+        let cfg = Config::from_lookup(|_| None).unwrap();
+        assert!(cfg.action_key_pkcs8.is_none());
+    }
+
+    #[test]
+    fn action_key_base64_dibaca() {
+        // "hello world" -> aGVsbG8gd29ybGQ=
+        let cfg = Config::from_lookup(|k| {
+            (k == "SELLER_SVC_ACTION_KEY").then(|| "aGVsbG8gd29ybGQ=".into())
+        })
+        .unwrap();
+        assert_eq!(cfg.action_key_pkcs8.unwrap(), b"hello world");
+    }
+
+    #[test]
+    fn action_key_bukan_base64_ditolak() {
+        let err =
+            Config::from_lookup(|k| (k == "SELLER_SVC_ACTION_KEY").then(|| "bukan base64!".into()));
+        assert!(matches!(err, Err(AppError::Config(_))));
     }
 
     #[test]
