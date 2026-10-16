@@ -19,6 +19,17 @@ pub enum AppError {
     Works(String),
     #[error("not implemented")]
     NotImplemented,
+
+    /* Token aksi. Kodenya dibedakan karena seller-app bercabang atasnya:
+     * yang satu "sudah diproses", yang lain "minta saran baru". */
+    #[error("token aksi tidak sah")]
+    TokenInvalid,
+    #[error("token aksi kedaluwarsa")]
+    TokenExpired,
+    #[error("token aksi sudah dipakai")]
+    TokenUsed,
+    #[error("jumlah {diminta} melebihi batas {batas}")]
+    QtyAboveCap { diminta: i64, batas: i64 },
 }
 
 impl IntoResponse for AppError {
@@ -30,6 +41,15 @@ impl IntoResponse for AppError {
             AppError::NotImplemented => (
                 StatusCode::NOT_IMPLEMENTED,
                 "not_implemented",
+                self.to_string(),
+            ),
+            AppError::TokenInvalid => (StatusCode::UNAUTHORIZED, "token_invalid", self.to_string()),
+            AppError::TokenExpired => (StatusCode::GONE, "token_expired", self.to_string()),
+            // 409: permintaannya sah, tapi sudah pernah dijalankan.
+            AppError::TokenUsed => (StatusCode::CONFLICT, "token_used", self.to_string()),
+            AppError::QtyAboveCap { .. } => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "qty_above_cap",
                 self.to_string(),
             ),
             AppError::Works(_) => {

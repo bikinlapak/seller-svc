@@ -22,6 +22,10 @@ dotenvy = "0.15"
 # tidak menarik aws-lc-sys (dan cmake) ke dalam build — sama alasannya
 # dengan works-core.
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+jsonwebtoken = "9"
+ulid = "1"
+chrono = { version = "0.4", default-features = false, features = ["serde"] }
+ring = "0.17"
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
