@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test --all-targets
+
+      # works-core melarang aws-lc-sys masuk pohon dependensi: rustls harus
+      # tetap memakai ring, supaya build tidak menarik cmake. Gampang bocor
+      # lewat default feature, jadi dijaga di CI, bukan dengan ingatan.
+      - name: Tidak ada aws-lc-sys
+        run: |
+          if cargo tree -i aws-lc-sys >/dev/null 2>&1; then
+            echo "::error::aws-lc-sys masuk ke pohon dependensi"
+            cargo tree -i aws-lc-sys
+            exit 1
+          fi
+
+  terraform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - run: terraform fmt -check -recursive
+        working-directory: infra
+      - run: terraform init -backend=false
+        working-directory: infra
+      - run: terraform validate
+        working-directory: infra

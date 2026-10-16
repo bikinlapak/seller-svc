@@ -1,0 +1,3 @@
+# terraform init -backend-config=envs/staging.gcs.tfbackend
+bucket = "passtok-staging-tfstate"
+prefix = "seller/staging"

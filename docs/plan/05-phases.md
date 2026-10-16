@@ -31,10 +31,18 @@ complete.
 staging, CI green, Terraform applied.
 
 - [ ] GCP project `passtok`: billing, budget and alerts (Rp cap per month)
-- [ ] Terraform in `infra/`: Artifact Registry, Cloud Run services + the
-      extractor job, Pub/Sub topics + DLQs, BigQuery datasets, GCS buckets
-      (photos, receipts) with lifecycle rules, Memorystore Redis, Secret
-      Manager, one service account per service with least privilege
+- [x] Terraform in `infra/`: Artifact Registry with cleanup, both Cloud Run
+      services, Secret Manager for the action key, one service account per
+      service with least privilege, and Workload Identity Federation for
+      keyless GitHub deploys (`gh-oidc` from
+      terraform-google-modules/github-actions-runners). `seller-svc` is
+      IAM-only — no `allUsers` — so the action endpoint is unreachable from
+      the internet; `seller-app` presents a metadata ID token
+- [x] CI + deploy workflows in both repos; `fmt`/`clippy`/tests/`validate` on
+      every PR, build-and-deploy on `main`
+- [ ] Terraform for the rest as its services arrive: Pub/Sub topics + DLQs,
+      BigQuery datasets, GCS buckets (photos, receipts) with lifecycle rules,
+      Memorystore Redis, the extractor job (Phases 4–7)
 - [ ] Enable Vertex AI; pick Gemini model versions and region
       (`asia-southeast2`, falling back to `asia-southeast1`) → **ADR-0006**
 - [ ] Convert `seller-svc` to a Cargo workspace; `git mv src → crates/seller-svc/src`;
@@ -56,9 +64,9 @@ staging, CI green, Terraform applied.
       to the works-server schema
 - [ ] Session auth: cookie + Redis-backed worksh.io token store, silent refresh,
       `/readyz`
-- [ ] CI (GitHub Actions or Cloud Build): fmt, clippy `-D warnings`, test,
-      `cargo deny`, the `aws-lc-sys` check, build, deploy to staging on main;
-      per-PR preview deploy
+- [x] CI: fmt, clippy `-D warnings`, test, the `aws-lc-sys` guard, Terraform
+      validate; build and deploy to staging on `main`
+- [ ] `cargo deny` (licences + advisories) and per-PR preview deploys
 - [ ] ADRs 0001–0006 ([01-architecture.md](01-architecture.md) lists them)
 
 ## Phase 1 — Daftar & onboarding (M)

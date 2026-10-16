@@ -1,0 +1,11 @@
+# .terraform.lock.hcl SENGAJA tidak diabaikan: versi provider harus sama
+# antara laptop dan CI, dan file itulah yang menjaminnya.
+.terraform/
+*.tfstate
+*.tfstate.*
+
+# Nilai per lingkungan sering memuat nama project dan URL internal.
+*.tfvars
+!*.tfvars.example
+*.tfbackend
+!*.tfbackend.example
