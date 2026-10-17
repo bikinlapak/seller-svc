@@ -3,7 +3,7 @@
 ## Goal
 
 One mobile-first app, **bikinlapak Seller**, where a merchant registers, sets up
-the shop, manages products and stock, sees reports, chats with Asisten Stok
+the shop, manages products and stock, sees reports, chats with the Shop Assistant
 (PasStok), photographs waste and sends it to the right destination.
 worksh.io stays the system of record; PasStok runs on Google Cloud.
 
@@ -12,16 +12,16 @@ This document covers the backend half. The frontend plan lives in
 
 ## Key decisions
 
-| Decision | Choice | Why |
-| -------- | ------ | --- |
-| One app or several | One SvelteKit PWA (`seller-app`), installable, mobile-first; desktop gets the same app with a side-panel layout | No app-store wall; same code for phone and laptop; push via Web Push |
-| System of record | worksh.io (works-server GraphQL + tenant Postgres) for accounts, tenants, products, stock, lots, POs, journal | Already built and tested; no second ledger |
-| New backend code | **Rust** crates on Cloud Run: `seller-svc` (BFF), `passtok-executor`, `passtok-extractor`, `passtok-risk`, `passtok-agent`, `passtok-notifier`, sharing `passtok-core` | See *Go → Rust* below |
-| Where chat + PasStok state live | A `passtok` schema in each tenant's Postgres (threads, messages, suggestions, decisions, waste records, recipients), owned by worksh.io, written only through the BFF/executor | Decision L28: one thread, rendered by any surface |
-| Events | Pub/Sub topics + BigQuery subscriptions; `outbox` table in Postgres for exactly-once publish | Native on GCP; same mental model as Kafka (topic, subscription, DLQ) |
-| AI | BigQuery `AI.FORECAST` (TimesFM) for numbers; Gemini on Vertex AI for text, Q&A, vision and daily specials | Numbers from SQL/Rust, words from Gemini (PRD §8) |
-| Writes from AI | **None.** Every write is a merchant tap → signed single-use token → executor → worksh.io mutation | Safety rule FR-18/FR-27 |
-| Realtime | SSE from the BFF; Redis (Memorystore) pub/sub to fan out across BFF instances | Simpler than WebSockets; works through proxies |
+| Decision                        | Choice                                                                                                                                                                         | Why                                                                  |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------- |
+| One app or several              | One SvelteKit PWA (`seller-app`), installable, mobile-first; desktop gets the same app with a side-panel layout                                                                | No app-store wall; same code for phone and laptop; push via Web Push |
+| System of record                | worksh.io (works-server GraphQL + tenant Postgres) for accounts, tenants, products, stock, lots, POs, journal                                                                  | Already built and tested; no second ledger                           |
+| New backend code                | **Rust** crates on Cloud Run: `seller-svc` (BFF), `passtok-executor`, `passtok-extractor`, `passtok-risk`, `passtok-agent`, `passtok-notifier`, sharing `passtok-core`         | See _Go → Rust_ below                                                |
+| Where chat + PasStok state live | A `passtok` schema in each tenant's Postgres (threads, messages, suggestions, decisions, waste records, recipients), owned by worksh.io, written only through the BFF/executor | Decision L28: one thread, rendered by any surface                    |
+| Events                          | Pub/Sub topics + BigQuery subscriptions; `outbox` table in Postgres for exactly-once publish                                                                                   | Native on GCP; same mental model as Kafka (topic, subscription, DLQ) |
+| AI                              | BigQuery `AI.FORECAST` (TimesFM) for numbers; Gemini on Vertex AI for text, Q&A, vision and daily specials                                                                     | Numbers from SQL/Rust, words from Gemini (PRD §8)                    |
+| Writes from AI                  | **None.** Every write is a merchant tap → signed single-use token → executor → worksh.io mutation                                                                              | Safety rule FR-18/FR-27                                              |
+| Realtime                        | SSE from the BFF; Redis (Memorystore) pub/sub to fan out across BFF instances                                                                                                  | Simpler than WebSockets; works through proxies                       |
 
 ## Go → Rust: the one deliberate deviation from the Notion plan
 
@@ -73,7 +73,7 @@ or L (4–5 days) for one engineer. See [05-phases.md](05-phases.md).
 
 ## Current state of this repo (2026-10-15)
 
-`seller-svc` today is the Phase 0 skeleton for the *seller dashboard* scope only:
+`seller-svc` today is the Phase 0 skeleton for the _seller dashboard_ scope only:
 
 - `src/lib.rs` — `AppState`, `build_router`, CORS; tests build the router with
   `tower::ServiceExt::oneshot`, no port opened.

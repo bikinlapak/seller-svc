@@ -1,321 +1,322 @@
-//! Bentuk respons yang dikonsumsi seller-app.
+//! Response shapes consumed by seller-app.
 //!
-//! Berkas ini adalah pasangan Rust dari `seller-app/src/lib/types/api.ts`.
-//! Keduanya ditulis tangan karena dua repo tidak bisa berbagi skema saat
-//! compile; `tests/contract.rs` menjaga keduanya tetap cocok.
+//! This is the Rust half of `seller-app/src/lib/types/api.ts`. Both are
+//! hand-written because the two repos cannot share a schema at compile time;
+//! `tests/http.rs` keeps them honest.
 //!
-//! Semua field diserialisasi camelCase supaya tidak perlu pemetaan di sisi
-//! SvelteKit.
+//! Everything serialises as camelCase so no mapping is needed in SvelteKit.
 
 use serde::{Deserialize, Serialize};
 
-/// Rupiah utuh, tanpa sen. Tidak pernah float.
+/// Whole rupiah, no cents. Never a float.
 pub type Idr = i64;
 
+/// How urgent something is. Used for both stock cover and expiry, so it is a
+/// severity rather than a date state: `Critical` means "act today", whether
+/// that is four kilos left or milk past its date.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
-pub enum Kondisi {
-    Aman,
-    Hampir,
-    Lewat,
+pub enum Severity {
+    Ok,
+    Warn,
+    Critical,
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct Toko {
-    pub nama: String,
-    pub pemilik: String,
-    /// Sapaan ikut waktu setempat; backend yang memutuskan, bukan browser.
-    pub sapaan: String,
+pub struct Shop {
+    pub name: String,
+    pub owner: String,
+    /// Greeting follows local time; the server decides, not the browser.
+    pub greeting: String,
 }
 
-/* ---------- Beranda asisten ---------- */
+/* ---------- Assistant home ---------- */
 
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "lowercase")]
-pub enum Ikon {
-    Stok,
-    Kedaluwarsa,
-    Donasi,
+pub enum AttentionIcon {
+    Stock,
+    Expiry,
+    Donation,
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct PerluPerhatian {
+pub struct Attention {
     pub id: String,
-    pub judul: String,
+    pub title: String,
     pub detail: String,
-    pub ikon: Ikon,
+    pub icon: AttentionIcon,
     pub href: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct PerintahCepat {
+pub struct QuickCommand {
     pub label: String,
     pub href: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct AsistenHome {
-    pub toko: Toko,
-    pub perhatian: Vec<PerluPerhatian>,
-    pub perintah: Vec<PerintahCepat>,
+pub struct AssistantHome {
+    pub shop: Shop,
+    pub attention: Vec<Attention>,
+    pub commands: Vec<QuickCommand>,
 }
 
 /* ---------- Thread ---------- */
 
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "lowercase")]
-pub enum Penulis {
+pub enum Author {
     Agent,
     Staff,
-    Sistem,
+    System,
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct KotakDeteksi {
-    /// Persen terhadap bidang foto, bukan piksel: tidak tergantung lebar layar.
+pub struct DetectionBox {
+    /// Percentages of the photo, not pixels, so they survive any screen width.
     pub x: f32,
     pub y: f32,
     pub w: f32,
     pub h: f32,
-    pub yakin: bool,
+    pub confident: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct AksiInline {
+pub struct InlineAction {
     pub label: String,
-    /// `None` = tombol sekunder tanpa efek tulis.
+    /// `None` = a secondary button with no write behind it.
     pub token: Option<String>,
-    pub utama: bool,
+    pub primary: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct KartuSaran {
+pub struct SuggestionCard {
     pub label: String,
-    pub keyakinan: String,
-    pub judul: String,
-    pub alasan: String,
-    /// Jumlah yang diusulkan. Token aksi membawa batas yang sama; penjual boleh
-    /// menurunkan, tidak boleh menaikkan.
-    pub jumlah: i64,
-    pub satuan: String,
+    pub confidence: String,
+    pub title: String,
+    pub reason: String,
+    /// The proposed quantity. The action token carries the same cap: the
+    /// merchant may revise down, never up.
+    pub quantity: i64,
+    pub unit: String,
     pub token: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct KartuHasil {
-    pub judul: String,
+pub struct ResultCard {
+    pub title: String,
     pub detail: String,
     pub wa_url: String,
     pub po_href: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Tujuan {
+pub struct Destination {
     pub id: String,
     pub label: String,
-    pub dipilih: bool,
+    pub selected: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct BarangSisa {
+pub struct WasteItem {
     pub id: String,
-    pub nama: String,
-    pub jumlah: i64,
-    pub satuan: String,
-    pub kondisi: Kondisi,
-    pub kondisi_label: String,
-    pub tujuan: Vec<Tujuan>,
+    pub name: String,
+    pub quantity: i64,
+    pub unit: String,
+    pub severity: Severity,
+    pub severity_label: String,
+    pub destinations: Vec<Destination>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub peringatan: Option<String>,
+    pub warning: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct Kandidat {
+pub struct Candidate {
     pub id: String,
-    pub nama: String,
+    pub name: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct BarangRagu {
-    pub keyakinan: i64,
-    pub kandidat: Vec<Kandidat>,
+pub struct UncertainItem {
+    pub confidence: i64,
+    pub candidates: Vec<Candidate>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct KartuSisa {
+pub struct WasteCard {
     pub label: String,
-    pub nilai: String,
-    pub barang: Vec<BarangSisa>,
-    pub ragu: Option<BarangRagu>,
-    pub catatan: String,
+    pub value: String,
+    pub items: Vec<WasteItem>,
+    pub uncertain: Option<UncertainItem>,
+    pub note: String,
 }
 
-/// Satu baris thread. `tipe` memilih komponen yang merender di seller-app.
+/// One line in a thread. `type` picks the component that renders it.
 #[derive(Debug, Clone, Serialize)]
-#[serde(tag = "tipe", rename_all = "snake_case")]
-pub enum Pesan {
-    Teks {
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum Message {
+    Text {
         id: String,
-        penulis: Penulis,
-        waktu: String,
-        teks: String,
+        author: Author,
+        time: String,
+        text: String,
         #[serde(skip_serializing_if = "Option::is_none")]
-        aksi: Option<Vec<AksiInline>>,
+        actions: Option<Vec<InlineAction>>,
     },
     #[serde(rename_all = "camelCase")]
-    Foto {
+    Photo {
         id: String,
-        penulis: Penulis,
-        waktu: String,
-        foto_label: String,
-        kotak: Vec<KotakDeteksi>,
+        author: Author,
+        time: String,
+        photo_label: String,
+        boxes: Vec<DetectionBox>,
     },
-    Tanda {
+    Note {
         id: String,
-        penulis: Penulis,
-        waktu: String,
-        teks: String,
+        author: Author,
+        time: String,
+        text: String,
     },
-    KartuSaran {
+    SuggestionCard {
         id: String,
-        penulis: Penulis,
-        waktu: String,
-        kartu: KartuSaran,
+        author: Author,
+        time: String,
+        card: SuggestionCard,
     },
-    KartuHasil {
+    ResultCard {
         id: String,
-        penulis: Penulis,
-        waktu: String,
-        kartu: KartuHasil,
+        author: Author,
+        time: String,
+        card: ResultCard,
     },
-    KartuSisa {
+    WasteCard {
         id: String,
-        penulis: Penulis,
-        waktu: String,
-        kartu: KartuSisa,
+        author: Author,
+        time: String,
+        card: WasteCard,
     },
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Thread {
-    pub topik: String,
-    pub toko: Toko,
-    /// Ditampilkan di baris meta agen, mis. "Gemini vision".
-    pub sumber: Option<String>,
-    pub pesan: Vec<Pesan>,
+    pub topic: String,
+    pub shop: Shop,
+    /// Shown on the agent's meta line, e.g. "Gemini vision".
+    pub source: Option<String>,
+    pub messages: Vec<Message>,
 }
 
-/* ---------- Produk ---------- */
+/* ---------- Products ---------- */
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Produk {
+pub struct Product {
     pub id: String,
-    pub nama: String,
-    pub harga: Option<Idr>,
-    pub harga_label: Option<String>,
-    pub subjudul: Option<String>,
-    pub kategori: String,
-    pub stok_label: String,
-    pub stok_kondisi: Kondisi,
+    pub name: String,
+    pub price: Option<Idr>,
+    pub price_label: Option<String>,
+    pub subtitle: Option<String>,
+    pub category: String,
+    pub stock_label: String,
+    pub stock_severity: Severity,
     pub status: String,
-    pub status_penting: bool,
-    pub foto_warna: String,
+    pub status_important: bool,
+    pub photo_colour: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct DaftarProduk {
+pub struct ProductList {
     pub total: usize,
-    pub kategori: Vec<String>,
-    pub produk: Vec<Produk>,
+    pub categories: Vec<String>,
+    pub products: Vec<Product>,
 }
 
-/* ---------- Stok ---------- */
+/* ---------- Stock ---------- */
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct RingkasanStok {
-    pub nilai: String,
-    pub hampir_habis: usize,
-    pub hampir_kedaluwarsa: usize,
+pub struct StockSummary {
+    pub value: String,
+    pub low_count: usize,
+    pub expiring_count: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct BarisStok {
+pub struct StockRow {
     pub id: String,
-    pub nama: String,
-    pub jumlah_label: String,
-    /// 0-100. Dihitung backend dari on-hand terhadap titik pesan ulang.
-    pub persen: i64,
-    pub kondisi: Kondisi,
-    pub kiri: String,
-    pub kanan: String,
-    pub kanan_penting: bool,
+    pub name: String,
+    pub quantity_label: String,
+    /// 0-100. Computed server-side from on-hand against the reorder point.
+    pub percent: i64,
+    pub severity: Severity,
+    pub left: String,
+    pub right: String,
+    pub right_important: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct DaftarStok {
-    pub lokasi: String,
-    pub ringkasan: RingkasanStok,
-    pub baris: Vec<BarisStok>,
+pub struct StockList {
+    pub location: String,
+    pub summary: StockSummary,
+    pub rows: Vec<StockRow>,
 }
 
-/* ---------- Pengaturan AI ---------- */
+/* ---------- AI settings ---------- */
 
 #[derive(Debug, Clone, Serialize)]
-pub struct ModeAsisten {
-    pub id: String,
-    pub label: String,
-    pub catatan: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct ModelTugas {
-    pub tugas: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub catatan: Option<String>,
-    pub nama: String,
-    /// `true` = angkanya dihitung sistem, bukan model bahasa.
-    pub sistem: bool,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct Otonomi {
+pub struct AssistantMode {
     pub id: String,
     pub label: String,
+    pub note: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TaskModel {
+    pub task: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub catatan: Option<String>,
-    pub aktif: bool,
+    pub note: Option<String>,
+    pub name: String,
+    /// `true` = the number is computed by the system, not by a language model.
+    pub system: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct Bahasa {
-    pub pilihan: Vec<String>,
-    pub dipilih: String,
+pub struct Autonomy {
+    pub id: String,
+    pub label: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct LanguageSetting {
+    pub options: Vec<String>,
+    pub selected: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Biaya {
-    pub batas_label: String,
-    pub terpakai_persen: i64,
-    pub catatan: String,
+pub struct Budget {
+    pub cap_label: String,
+    pub used_percent: i64,
+    pub note: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PengaturanAi {
-    pub mode: Vec<ModeAsisten>,
-    pub mode_dipilih: String,
-    pub model: Vec<ModelTugas>,
-    pub otonomi: Vec<Otonomi>,
-    pub bahasa: Bahasa,
-    pub biaya: Biaya,
-    pub privasi: String,
+pub struct AiSettings {
+    pub modes: Vec<AssistantMode>,
+    pub selected_mode: String,
+    pub models: Vec<TaskModel>,
+    pub autonomy: Vec<Autonomy>,
+    pub language: LanguageSetting,
+    pub budget: Budget,
+    pub privacy: String,
 }

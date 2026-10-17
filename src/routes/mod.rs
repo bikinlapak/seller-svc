@@ -1,4 +1,4 @@
-pub mod asisten;
+pub mod assistant;
 pub mod builder;
 pub mod health;
 pub mod products;
@@ -8,10 +8,10 @@ use axum::Router;
 
 use crate::AppState;
 
-/// Semua endpoint berversi untuk seller-app.
+/// Every versioned endpoint seller-app uses.
 pub fn v1_router() -> Router<AppState> {
     Router::new()
-        .merge(asisten::router())
+        .merge(assistant::router())
         .nest("/products", products::router())
         .nest("/stock", stock::router())
         .nest("/builder", builder::router())

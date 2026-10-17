@@ -2,17 +2,17 @@ use std::net::SocketAddr;
 
 use crate::AppError;
 
-/// Konfigurasi dibaca sekali saat start dari environment (prefix `SELLER_SVC_`).
-/// Daftar lengkapnya ada di `.env.example`.
+/// Read once at start-up from the environment (prefix `SELLER_SVC_`).
+/// The full list lives in `.env.example`.
 #[derive(Debug, Clone)]
 pub struct Config {
     pub bind_addr: SocketAddr,
     pub log_json: bool,
-    /// Endpoint GraphQL works-server, mis. `http://127.0.0.1:8000/graphql`.
+    /// works-server GraphQL endpoint, e.g. `http://127.0.0.1:8000/graphql`.
     pub works_graphql_url: String,
     pub cors_allowed_origins: Vec<String>,
-    /// Kunci privat Ed25519 (PKCS#8 DER, base64) untuk token aksi. Kosong =
-    /// buat kunci sementara saat start; hanya untuk dev.
+    /// Ed25519 private key (PKCS#8 DER, base64) for action tokens. Empty =
+    /// generate a throwaway key at start-up; development only.
     pub action_key_pkcs8: Option<Vec<u8>>,
 }
 
@@ -21,7 +21,8 @@ impl Config {
         Self::from_lookup(|key| std::env::var(key).ok())
     }
 
-    /// Dipisah dari `from_env` supaya bisa dites tanpa mengubah env proses.
+    /// Kept separate from `from_env` so it can be tested without touching
+    /// the process environment.
     pub fn from_lookup(get: impl Fn(&str) -> Option<String>) -> Result<Self, AppError> {
         let bind_addr = get("SELLER_SVC_BIND_ADDR")
             .unwrap_or_else(|| "127.0.0.1:8080".into())
@@ -58,28 +59,28 @@ impl Config {
     }
 }
 
-/// base64 standar (dengan atau tanpa padding). Satu fungsi kecil lebih murah
-/// daripada menarik crate hanya untuk membaca satu env var.
+/// Standard base64, padded or not. One small function is cheaper than
+/// pulling in a crate to read a single environment variable.
 fn base64_decode(s: &str) -> Option<Vec<u8>> {
-    const TABEL: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut nilai = [255u8; 256];
-    for (i, c) in TABEL.iter().enumerate() {
-        nilai[*c as usize] = i as u8;
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut table = [255u8; 256];
+    for (i, c) in ALPHABET.iter().enumerate() {
+        table[*c as usize] = i as u8;
     }
 
     let mut out = Vec::with_capacity(s.len() * 3 / 4);
     let mut buf = 0u32;
-    let mut bit = 0u32;
+    let mut bits = 0u32;
     for c in s.bytes().filter(|c| *c != b'=' && !c.is_ascii_whitespace()) {
-        let v = nilai[c as usize];
+        let v = table[c as usize];
         if v == 255 {
             return None;
         }
         buf = (buf << 6) | u32::from(v);
-        bit += 6;
-        if bit >= 8 {
-            bit -= 8;
-            out.push((buf >> bit) as u8);
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((buf >> bits) as u8);
         }
     }
     Some(out)
@@ -97,13 +98,13 @@ mod tests {
     }
 
     #[test]
-    fn action_key_kosong_berarti_kunci_sementara() {
+    fn no_action_key_means_an_ephemeral_one() {
         let cfg = Config::from_lookup(|_| None).unwrap();
         assert!(cfg.action_key_pkcs8.is_none());
     }
 
     #[test]
-    fn action_key_base64_dibaca() {
+    fn reads_a_base64_action_key() {
         // "hello world" -> aGVsbG8gd29ybGQ=
         let cfg = Config::from_lookup(|k| {
             (k == "SELLER_SVC_ACTION_KEY").then(|| "aGVsbG8gd29ybGQ=".into())
@@ -113,9 +114,9 @@ mod tests {
     }
 
     #[test]
-    fn action_key_bukan_base64_ditolak() {
+    fn rejects_an_action_key_that_is_not_base64() {
         let err =
-            Config::from_lookup(|k| (k == "SELLER_SVC_ACTION_KEY").then(|| "bukan base64!".into()));
+            Config::from_lookup(|k| (k == "SELLER_SVC_ACTION_KEY").then(|| "not base64!".into()));
         assert!(matches!(err, Err(AppError::Config(_))));
     }
 

@@ -14,8 +14,8 @@ pub fn router() -> Router<AppState> {
     Router::new().route("/healthz", get(healthz))
 }
 
-/// Liveness saja: tidak menyentuh works-server, supaya orkestrator tidak
-/// me-restart layanan ini hanya karena upstream sedang turun.
+/// Liveness only: it does not touch works-server, so the orchestrator will not
+/// restart this service just because an upstream is down.
 async fn healthz() -> Json<Health> {
     Json(Health {
         status: "ok",

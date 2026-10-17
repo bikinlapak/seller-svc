@@ -3,8 +3,8 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use serde_json::json;
 
-/// Error yang bisa dikembalikan handler. Pesan untuk klien sengaja generik
-/// untuk error internal; detailnya hanya masuk log.
+/// Errors a handler may return. Client-facing messages are deliberately
+/// generic for internal failures; the detail only reaches the log.
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
     #[error("config error: {0}")]
@@ -20,16 +20,16 @@ pub enum AppError {
     #[error("not implemented")]
     NotImplemented,
 
-    /* Token aksi. Kodenya dibedakan karena seller-app bercabang atasnya:
-     * yang satu "sudah diproses", yang lain "minta saran baru". */
-    #[error("token aksi tidak sah")]
+    /* Action tokens. These get distinct codes because seller-app branches on
+     * them: one means "already done", the other "ask for a fresh suggestion". */
+    #[error("invalid action token")]
     TokenInvalid,
-    #[error("token aksi kedaluwarsa")]
+    #[error("action token expired")]
     TokenExpired,
-    #[error("token aksi sudah dipakai")]
+    #[error("action token already used")]
     TokenUsed,
-    #[error("jumlah {diminta} melebihi batas {batas}")]
-    QtyAboveCap { diminta: i64, batas: i64 },
+    #[error("quantity {requested} exceeds the cap of {cap}")]
+    QtyAboveCap { requested: i64, cap: i64 },
 }
 
 impl IntoResponse for AppError {
@@ -45,7 +45,7 @@ impl IntoResponse for AppError {
             ),
             AppError::TokenInvalid => (StatusCode::UNAUTHORIZED, "token_invalid", self.to_string()),
             AppError::TokenExpired => (StatusCode::GONE, "token_expired", self.to_string()),
-            // 409: permintaannya sah, tapi sudah pernah dijalankan.
+            // 409: the request is valid, it has simply already been carried out.
             AppError::TokenUsed => (StatusCode::CONFLICT, "token_used", self.to_string()),
             AppError::QtyAboveCap { .. } => (
                 StatusCode::UNPROCESSABLE_ENTITY,

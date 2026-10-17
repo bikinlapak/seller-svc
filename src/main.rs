@@ -3,7 +3,8 @@ use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // .env opsional: dipakai saat dev lokal, di container cukup env biasa.
+    // .env is optional: handy locally, plain environment variables in a
+    // container.
     let _ = dotenvy::dotenv();
 
     let config = Config::from_env()?;

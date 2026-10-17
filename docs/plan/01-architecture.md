@@ -56,7 +56,7 @@ seller-svc/
           donations.rs       donation + receipt PDF
           push.rs            Web Push subscribe/unsubscribe
         sse/                 broadcast channel + Redis pub/sub bridge
-        aggregate/           Beranda and Laporan aggregates (fan-out + join)
+        aggregate/           home and report aggregates (fan-out + join)
     passtok-executor/        verifies action tokens, runs worksh.io mutations
     passtok-extractor/       worksh.io → BigQuery (Cloud Run job)
     passtok-risk/            reorder + expiry + production rules → events
@@ -88,16 +88,16 @@ stay independent.
 
 ## Crate responsibilities
 
-| Crate | Owns | Never does |
-| ----- | ---- | ---------- |
-| `seller-svc` | Merchant session (worksh.io tokens), screen-shaped endpoints, SSE stream, photo upload URLs, message persistence via worksh.io | Call Gemini; hold business rules |
-| `passtok-executor` | Token verify (tenant, action, qty cap, expiry, `jti`), permission check, idempotent mutation, result card, `decision.recorded` / `waste.recorded` / `donation.completed` via outbox | Act without a token |
-| `passtok-extractor` | Backfill + 15-minute incremental sync of movements, stock, lots, products, suppliers, POs | Write to worksh.io |
-| `passtok-risk` | Reorder point, expiry cap, pack rounding, lot sell-through, production plan, markdown ladder schedule; emits events | Generate text |
-| `passtok-agent` | Turns events into cards, answers chat, vision extraction + grounded matching, daily-special ideas; signs action tokens | Write to worksh.io; invent numbers |
-| `passtok-notifier` | Push subscriptions, escalation ladder, quiet hours, morning digest, weekly impact digest | Send full conversations to WhatsApp |
-| `passtok-core` | Cross-cutting plumbing only | Contain any domain rule |
-| `passtok-worksh` | Typed worksh.io operations | Interpret results |
+| Crate               | Owns                                                                                                                                                                                | Never does                          |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| `seller-svc`        | Merchant session (worksh.io tokens), screen-shaped endpoints, SSE stream, photo upload URLs, message persistence via worksh.io                                                      | Call Gemini; hold business rules    |
+| `passtok-executor`  | Token verify (tenant, action, qty cap, expiry, `jti`), permission check, idempotent mutation, result card, `decision.recorded` / `waste.recorded` / `donation.completed` via outbox | Act without a token                 |
+| `passtok-extractor` | Backfill + 15-minute incremental sync of movements, stock, lots, products, suppliers, POs                                                                                           | Write to worksh.io                  |
+| `passtok-risk`      | Reorder point, expiry cap, pack rounding, lot sell-through, production plan, markdown ladder schedule; emits events                                                                 | Generate text                       |
+| `passtok-agent`     | Turns events into cards, answers chat, vision extraction + grounded matching, daily-special ideas; signs action tokens                                                              | Write to worksh.io; invent numbers  |
+| `passtok-notifier`  | Push subscriptions, escalation ladder, quiet hours, morning digest, weekly impact digest                                                                                            | Send full conversations to WhatsApp |
+| `passtok-core`      | Cross-cutting plumbing only                                                                                                                                                         | Contain any domain rule             |
+| `passtok-worksh`    | Typed worksh.io operations                                                                                                                                                          | Interpret results                   |
 
 The two rows that carry the safety property are `passtok-agent` (no write
 capability at all — it has no works-server write scope and no executor
@@ -111,13 +111,13 @@ is answerable by reading the dependency list.
 `reorder.suggested` → Pub/Sub → `passtok-agent` writes a `reorder_card` message
 and a `suggestions` row, signs an action token scoped to
 `(tenant, suggestion, action, max_qty, exp, jti)` → BFF pushes the card over SSE
-→ merchant edits the quantity and taps *Setujui* → `POST /actions/:token` with
+→ merchant edits the quantity and taps _Setujui_ → `POST /actions/:token` with
 the final quantity → `passtok-executor` verifies the token, checks the quantity
 against `max_qty`, marks the `jti` used in the same transaction as the mutation,
 calls `createPurchaseOrder` + `submitPurchaseOrder`, writes a `result_card` and
 a `decision.recorded` outbox row.
 
-The quantity cap matters: the merchant may edit *down* within the cap, never up,
+The quantity cap matters: the merchant may edit _down_ within the cap, never up,
 so an edited approval cannot exceed what the agent proposed.
 
 **A photo becomes a write-off.** Camera in the PWA → `POST /waste/photos`
@@ -136,15 +136,15 @@ gap, and the client refetches the thread.
 
 ## Deploy units
 
-| Unit | Kind | Trigger | Scaling |
-| ---- | ---- | ------- | ------- |
-| `seller-app` | Cloud Run service | HTTPS | min 0 (min 1 during the demo) |
-| `seller-svc` | Cloud Run service | HTTPS | min 1 — SSE connections |
-| `passtok-executor` | Cloud Run service | HTTPS from BFF (internal, IAM) | min 0 |
-| `passtok-risk` | Cloud Run service | Pub/Sub push + Scheduler | min 0 |
-| `passtok-agent` | Cloud Run service | Pub/Sub push + internal HTTP | min 0 |
-| `passtok-notifier` | Cloud Run service | Pub/Sub push + Scheduler | min 0 |
-| `passtok-extractor` | Cloud Run **job** | Scheduler, every 15 min | — |
+| Unit                | Kind              | Trigger                        | Scaling                       |
+| ------------------- | ----------------- | ------------------------------ | ----------------------------- |
+| `seller-app`        | Cloud Run service | HTTPS                          | min 0 (min 1 during the demo) |
+| `seller-svc`        | Cloud Run service | HTTPS                          | min 1 — SSE connections       |
+| `passtok-executor`  | Cloud Run service | HTTPS from BFF (internal, IAM) | min 0                         |
+| `passtok-risk`      | Cloud Run service | Pub/Sub push + Scheduler       | min 0                         |
+| `passtok-agent`     | Cloud Run service | Pub/Sub push + internal HTTP   | min 0                         |
+| `passtok-notifier`  | Cloud Run service | Pub/Sub push + Scheduler       | min 0                         |
+| `passtok-extractor` | Cloud Run **job** | Scheduler, every 15 min        | —                             |
 
 Pub/Sub push beats pull here: no long-lived subscriber, Cloud Run scales to
 zero, and each push carries an OIDC token the service verifies. Every service

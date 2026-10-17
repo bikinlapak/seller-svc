@@ -1,8 +1,8 @@
-//! seller-svc — backend dasbor penjual bikinlapak.
+//! seller-svc — backend for the bikinlapak seller app.
 //!
-//! Layanan ini tidak menyimpan data produk/halaman sendiri: produk dan web
-//! builder dikelola di worksh.io, diakses lewat GraphQL works-server
-//! (lihat [`works`]).
+//! This service owns no product or page data of its own: products and the web
+//! builder live in worksh.io and are reached through the works-server GraphQL
+//! API (see [`works`]).
 
 pub mod config;
 pub mod contract;
@@ -22,14 +22,14 @@ use tower_http::trace::TraceLayer;
 pub use config::Config;
 pub use error::AppError;
 
-/// State bersama untuk semua handler. Murah di-clone (isinya `Arc`).
+/// Shared state for every handler. Cheap to clone — it is all `Arc`s.
 #[derive(Clone)]
 pub struct AppState {
     pub config: Arc<Config>,
     pub works: works::WorksClient,
-    /// Kunci penandatangan token aksi.
+    /// Signing keys for action tokens.
     pub action_keys: Arc<token::ActionKeys>,
-    /// Catatan token yang sudah terpakai — sekali pakai ditegakkan di sini.
+    /// Record of spent tokens — single use is enforced here.
     pub tokens: Arc<token::TokenGuard>,
 }
 
@@ -37,21 +37,23 @@ impl AppState {
     pub fn new(config: Config) -> Result<Self, AppError> {
         let works = works::WorksClient::new(&config.works_graphql_url)?;
 
-        // Tanpa kunci dari Secret Manager, buat yang sementara. Token jadi
-        // hangus tiap restart — benar untuk dev, salah untuk produksi, jadi
-        // katakan dengan lantang.
+        // With no key from Secret Manager, generate a throwaway one. Tokens
+        // then die on every restart — right for development, wrong for
+        // production, so say so loudly.
         let action_keys = match &config.action_key_pkcs8 {
             Some(der) => {
                 let pair = ring::signature::Ed25519KeyPair::from_pkcs8(der).map_err(|_| {
-                    AppError::Config("SELLER_SVC_ACTION_KEY bukan PKCS#8 Ed25519 yang sah".into())
+                    AppError::Config(
+                        "SELLER_SVC_ACTION_KEY is not a valid Ed25519 PKCS#8 key".into(),
+                    )
                 })?;
                 use ring::signature::KeyPair;
                 token::ActionKeys::new(der, pair.public_key().as_ref())
             }
             None => {
                 tracing::warn!(
-                    "SELLER_SVC_ACTION_KEY kosong: memakai kunci sementara. \
-                     Token aksi hangus setiap restart — jangan dipakai di produksi."
+                    "SELLER_SVC_ACTION_KEY is empty: using a throwaway key. \
+                     Action tokens die on every restart — not for production."
                 );
                 token::ActionKeys::ephemeral()?
             }

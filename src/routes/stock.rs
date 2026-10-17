@@ -1,17 +1,17 @@
-//! Stok per lokasi, dengan ringkasan untuk kepala layar.
+//! Stock by location, with the summary the screen header needs.
 
 use axum::routing::get;
 use axum::{Json, Router};
 
-use crate::contract::DaftarStok;
+use crate::contract::StockList;
 use crate::{AppState, seed};
 
 pub fn router() -> Router<AppState> {
     Router::new().route("/", get(list))
 }
 
-// TODO(Fase 2): `stockByLocation` + `stockLots` dari works-server.
-// `persen` dan label hari dihitung di sini, bukan di seller-app.
-async fn list() -> Json<DaftarStok> {
-    Json(seed::stok())
+// TODO(Phase 2): `stockByLocation` + `stockLots` from works-server. `percent`
+// and the day labels are computed here, not in seller-app.
+async fn list() -> Json<StockList> {
+    Json(seed::stock())
 }

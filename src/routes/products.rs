@@ -1,17 +1,17 @@
-//! Katalog produk — sumber datanya katalog produk worksh.io.
+//! Product catalogue — sourced from the worksh.io catalogue.
 
 use axum::routing::get;
 use axum::{Json, Router};
 
-use crate::contract::DaftarProduk;
+use crate::contract::ProductList;
 use crate::{AppState, seed};
 
 pub fn router() -> Router<AppState> {
     Router::new().route("/", get(list))
 }
 
-// TODO(Fase 2): query produk ke works-server lewat `state.works`,
-// dengan paginasi kursor. Pencarian dan filter kategori ikut ke sana.
-async fn list() -> Json<DaftarProduk> {
-    Json(seed::produk())
+// TODO(Phase 2): query works-server through `state.works`, with cursor
+// pagination. Search and category filtering move there too.
+async fn list() -> Json<ProductList> {
+    Json(seed::products())
 }

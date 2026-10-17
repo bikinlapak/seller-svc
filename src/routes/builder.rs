@@ -1,4 +1,4 @@
-//! Web builder — halaman toko online yang disimpan sebagai draft di worksh.io.
+//! Web builder — online-shop pages stored as drafts in worksh.io.
 
 use axum::Router;
 use axum::routing::get;
@@ -9,7 +9,7 @@ pub fn router() -> Router<AppState> {
     Router::new().route("/pages", get(list_pages))
 }
 
-// TODO: daftar halaman toko dari works-server lewat `state.works`.
+// TODO: list shop pages from works-server through `state.works`.
 async fn list_pages() -> Result<(), AppError> {
     Err(AppError::NotImplemented)
 }

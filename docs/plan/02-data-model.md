@@ -13,22 +13,22 @@ Three stores, with a clear owner each:
 
 ## `passtok` schema (per tenant)
 
-| Table | Key columns |
-| ----- | ----------- |
-| `threads` | `id`, `kind` (`asisten_stok`), `created_at` |
-| `messages` | `id`, `thread_id`, `author` (`agent` / `staff:<id>` / `system`), `type` (`text`, `reorder_card`, `expiry_card`, `result_card`, `digest`, `waste_card`, `special_card`, `donation_card`), `body`, `payload jsonb`, `ai_label`, `created_at`, `read_at` |
-| `suggestions` | `id`, `kind`, `status` (`open` / `approved` / `edited` / `rejected` / `expired`), `inputs jsonb` (forecast run, on-hand, lead time, shelf life), `proposed jsonb`, `final jsonb`, `event_id` **unique** |
-| `action_tokens` | `jti` pk, `suggestion_id`, `action`, `max_qty`, `expires_at`, `used_at` |
-| `waste_records` | `id`, `photo_ids[]`, `product_id`, `lot_id`, `qty`, `unit`, `condition`, `destination`, `value_at_cost`, `vision_confidence`, `edited`, `actor`, `recorded_at` |
-| `recipients` | `id`, `type` (`partner_food_bank` / `own`), `name`, `contact`, `address`, `pickup`, `active` |
-| `donations` | `id` (`DON-YYYY-NNNN`), `recipient_id`, `lines jsonb`, `safety_checklist jsonb`, `pickup_window`, `picked_up_at`, `receipt_uri` |
-| `markdowns` | `id`, `product_id`, `lot_id`, `steps jsonb`, `channels[]`, `starts_at`, `ends_at`, `then_destination`, `status` |
-| `supplier_terms` | `supplier_id`, `product_id`, `lead_time_days`, `pack_size`, `min_order_qty` (until works-core has them) |
-| `product_extras` | `product_id`, `shelf_life_days`, `perishable` (until works-core has them) |
-| `calendar_overrides` | `date`, `location_id`, `closed`, `note` (from chat corrections, FR-31) |
-| `auto_approve_rules` | `product_id`, `max_value`, `min_unedited_approvals`, `enabled` |
-| `push_subscriptions` | `staff_id`, `endpoint`, `keys`, `platform`, `created_at` |
-| `outbox` | `id`, `topic`, `payload`, `created_at`, `published_at` |
+| Table                | Key columns                                                                                                                                                                                                                                           |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `threads`            | `id`, `kind` (`asisten_stok`), `created_at`                                                                                                                                                                                                           |
+| `messages`           | `id`, `thread_id`, `author` (`agent` / `staff:<id>` / `system`), `type` (`text`, `reorder_card`, `expiry_card`, `result_card`, `digest`, `waste_card`, `special_card`, `donation_card`), `body`, `payload jsonb`, `ai_label`, `created_at`, `read_at` |
+| `suggestions`        | `id`, `kind`, `status` (`open` / `approved` / `edited` / `rejected` / `expired`), `inputs jsonb` (forecast run, on-hand, lead time, shelf life), `proposed jsonb`, `final jsonb`, `event_id` **unique**                                               |
+| `action_tokens`      | `jti` pk, `suggestion_id`, `action`, `max_qty`, `expires_at`, `used_at`                                                                                                                                                                               |
+| `waste_records`      | `id`, `photo_ids[]`, `product_id`, `lot_id`, `qty`, `unit`, `condition`, `destination`, `value_at_cost`, `vision_confidence`, `edited`, `actor`, `recorded_at`                                                                                        |
+| `recipients`         | `id`, `type` (`partner_food_bank` / `own`), `name`, `contact`, `address`, `pickup`, `active`                                                                                                                                                          |
+| `donations`          | `id` (`DON-YYYY-NNNN`), `recipient_id`, `lines jsonb`, `safety_checklist jsonb`, `pickup_window`, `picked_up_at`, `receipt_uri`                                                                                                                       |
+| `markdowns`          | `id`, `product_id`, `lot_id`, `steps jsonb`, `channels[]`, `starts_at`, `ends_at`, `then_destination`, `status`                                                                                                                                       |
+| `supplier_terms`     | `supplier_id`, `product_id`, `lead_time_days`, `pack_size`, `min_order_qty` (until works-core has them)                                                                                                                                               |
+| `product_extras`     | `product_id`, `shelf_life_days`, `perishable` (until works-core has them)                                                                                                                                                                             |
+| `calendar_overrides` | `date`, `location_id`, `closed`, `note` (from chat corrections, FR-31)                                                                                                                                                                                |
+| `auto_approve_rules` | `product_id`, `max_value`, `min_unedited_approvals`, `enabled`                                                                                                                                                                                        |
+| `push_subscriptions` | `staff_id`, `endpoint`, `keys`, `platform`, `created_at`                                                                                                                                                                                              |
+| `outbox`             | `id`, `topic`, `payload`, `created_at`, `published_at`                                                                                                                                                                                                |
 
 ### Invariants to encode in the schema, not in handlers
 
@@ -95,7 +95,7 @@ One shape for every event, JSON Schema in `schemas/`, Rust types generated with
   "tenant_id": "...",
   "occurred_at": "2026-10-15T02:00:00Z",
   "trace_id": "...",
-  "payload": { }
+  "payload": {}
 }
 ```
 
@@ -119,6 +119,6 @@ dead-letter topic. Consumers tolerate unknown fields and must be idempotent on
 
 Until the first two land: write off without a lot id, and read lead time, pack
 size, MOQ and shelf life from the `passtok` stand-in tables. Phase 5's reorder
-rule must therefore treat these as *optional* inputs with a documented default
+rule must therefore treat these as _optional_ inputs with a documented default
 (lead time 3 days, pack size 1, MOQ 1) and say so on the card — a suggestion
 built on a guessed lead time should admit it.

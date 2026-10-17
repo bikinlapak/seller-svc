@@ -1,8 +1,8 @@
-//! Klien GraphQL ke works-server (API worksh.io).
+//! GraphQL client for works-server (the worksh.io API).
 //!
-//! Setiap panggilan membawa access token penjual yang sedang login, jadi
-//! izin dan tenant ditegakkan oleh works-server — layanan ini tidak
-//! menduplikasi aturan otorisasi.
+//! Every call carries the logged-in merchant's access token, so works-server
+//! enforces permissions and the tenant — this service does not duplicate
+//! authorization rules.
 
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -45,7 +45,7 @@ impl WorksClient {
         })
     }
 
-    /// Jalankan satu operasi GraphQL atas nama `access_token`.
+    /// Run one GraphQL operation on behalf of `access_token`.
     pub async fn execute<V, T>(
         &self,
         access_token: &str,

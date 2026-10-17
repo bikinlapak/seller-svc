@@ -87,7 +87,7 @@ a tenant in worksh.io.
 - [ ] Funnel events: `seller.signup_completed`, `onboarding.step_completed`,
       `shop.published`
 
-## Phase 2 — Produk & stok (L)
+## Phase 2 — Products and stock (L)
 
 **Exit:** a merchant manages catalog, stock, lots, suppliers and POs from the app.
 
@@ -106,19 +106,19 @@ a tenant in worksh.io.
 - [ ] Role mapping: owner vs staff → worksh.io roles; the BFF forwards, it does
       not decide
 
-## Phase 3 — Pesanan & laporan dasar (M)
+## Phase 3 — Orders and basic reports (M)
 
-**Exit:** orders arrive and are fulfilled in-app; Beranda and Laporan show real
-numbers.
+**Exit:** orders arrive and are fulfilled in-app; the assistant home and reports
+show real numbers.
 
 - [ ] `GET /v1/orders` across channels (lapak, marketplace, chat-to-checkout),
-      detail, `POST /v1/orders/:id/fulfil` (process, ship, resi)
-- [ ] `GET /v1/home` — one aggregate: omzet hari ini, pesanan, stok menipis,
+      detail, `POST /v1/orders/:id/fulfil` (process, ship, tracking number)
+- [ ] `GET /v1/home` — one aggregate: today's revenue, orders, low stock,
       open PasStok cards. Concurrent works-server calls with
       `tokio::try_join!`, a per-call timeout, and partial degradation (a slow
       section returns `null`, not a 500)
-- [ ] `GET /v1/reports/summary` — omzet & untung, uang masuk vs untung, produk
-      terlaris, stok value
+- [ ] `GET /v1/reports/summary` — revenue and profit, cash in vs profit, best
+      sellers, stock value
 - [ ] `seed/` generator: Toko Kopi Jasa, 90+ days of realistic sales
       (weekday/weekend, paydays, a promo week, perishables with lots),
       suppliers, past POs. Deterministic from a seed so the demo repeats
@@ -163,7 +163,7 @@ The expiry cap is the rule that makes PasStok different from a reorder-point
 spreadsheet: never suggest more than can be sold before it expires. Test it
 first.
 
-## Phase 6 — Asisten Stok chat (L)
+## Phase 6 — Shop Assistant chat (L)
 
 **Exit:** the demo's reorder story works end to end — card → question → edit →
 approve → PO in worksh.io.
@@ -201,7 +201,7 @@ evidence.
 - [ ] `POST /v1/waste/analyze` → agent → Gemini structured output (label, count,
       unit, condition, confidence, bbox) given the tenant's candidate products
       (perishable, in stock, near expiry first, with primary images)
-- [ ] Grounded matching: accept **only** candidate ids; below threshold → top 3 + "Bukan produk toko"
+- [ ] Grounded matching: accept **only** candidate ids; below threshold → top 3 + "Not one of our products"
 - [ ] `POST /v1/waste/confirm` → executor `adjustStock` (lot-aware once
       works-core lands `lotId`), value at cost, `waste.recorded`
 - [ ] Vision cache keyed by photo digest — the same photo must not be billed twice
@@ -249,7 +249,7 @@ intervention.
 
 - [ ] Markdown ladder (needs the worksh.io price override) on lapak + POS
 - [ ] Bundling suggestions and bundle product creation
-- [ ] "Diskon hari ini" feed for bikinlapak.com
+- [ ] "Today's discounts" feed for bikinlapak.com
 - [ ] Surplus hand-off (deep link → partnership)
 - [ ] Staff-meal destination
 
@@ -260,7 +260,7 @@ intervention.
 - [ ] Packaging to bank sampah
 - [ ] Damaged-on-arrival → supplier return / credit note (needs works-core)
 - [ ] Monthly impact report PDF; CO₂e once an emission factor is chosen;
-      "Toko Minim Sisa" badge rules
+      "Low Waste Shop" badge rules
 
 ## Phase 12 — Scale & platform (post-hackathon, L)
 
