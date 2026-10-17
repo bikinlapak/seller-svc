@@ -1,8 +1,10 @@
 name: Deploy
 
+# Tahap uji: trigger dari branch feature/test_deployment. Setelah pipeline
+# terbukti jalan, ganti ke [main, master] (merge PR).
 on:
   push:
-    branches: [main]
+    branches: [feature/test_deployment]
   workflow_dispatch:
 
 # Tidak ada kunci service account di mana pun: `id-token: write` yang
@@ -18,9 +20,14 @@ concurrency:
   group: deploy-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # Image toolchain gemuk: dibangun sekali, dipakai ulang tiap deploy.
+  # Naikkan tag-nya hanya saat upgrade toolchain.
+  BASE_IMAGE: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.AR_REPO }}/seller-svc-base:v1
+
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted]
     environment: staging
     steps:
       - uses: actions/checkout@v4
@@ -36,11 +43,21 @@ jobs:
       - name: Izinkan docker push ke Artifact Registry
         run: gcloud auth configure-docker ${{ vars.GCP_REGION }}-docker.pkg.dev --quiet
 
+      - name: Verifikasi atau bangun base image
+        run: |
+          if docker pull "${BASE_IMAGE}" 2>/dev/null; then
+            echo "==> Base image ada di registry: ${BASE_IMAGE}"
+          else
+            echo "==> Base image tidak ada. Membangun dari Dockerfile.base ..."
+            docker build -f Dockerfile.base -t "${BASE_IMAGE}" .
+            docker push "${BASE_IMAGE}"
+          fi
+
       - name: Build & push
         id: build
         run: |
           IMAGE="${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.AR_REPO }}/seller-svc:${{ github.sha }}"
-          docker build -t "$IMAGE" .
+          docker build -f Dockerfile.app --build-arg BASE_IMAGE="${BASE_IMAGE}" -t "$IMAGE" .
           docker push "$IMAGE"
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
 

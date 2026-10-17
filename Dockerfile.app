@@ -1,4 +1,8 @@
-FROM rust:1.97-bookworm AS builder
+# Fat toolchain base; the workflow always passes the real value via
+# --build-arg BASE_IMAGE. Keep the default in sync with deploy.yml.
+ARG BASE_IMAGE=rust:1.97-bookworm
+
+FROM ${BASE_IMAGE} AS builder
 WORKDIR /app
 COPY . .
 RUN --mount=type=cache,id=seller-svc-target,target=/app/target \

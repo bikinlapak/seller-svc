@@ -43,27 +43,25 @@ kredensial deployer kita. `sa_mapping` sudah mempersempit per repo, tapi
 syarat di atas ditegakkan lebih dulu di tingkat provider, jadi salah ketik di
 `sa_mapping` tidak langsung membuka pintu. Jangan hapus baris itu.
 
-## Runner: kenapa submodulnya tidak dipakai
+## Runner
 
 Modul yang dirujuk,
 [`terraform-google-modules/github-actions-runners`](https://github.com/terraform-google-modules/terraform-google-github-actions-runners),
 berisi empat submodul: tiga untuk **self-hosted runner** (GKE, MIG VM, MIG
-container VM) dan satu untuk **WIF** (`gh-oidc`).
+container VM) dan satu untuk **WIF** (`gh-oidc`). Yang dipakai di sini hanya
+`gh-oidc`.
 
-Yang dipakai di sini hanya `gh-oidc`. Runner-nya tidak, karena:
+Runner-nya self-hosted, tapi **tidak lewat submodul**: VM `github-runner`
+(e2-medium, Debian) dibuat dan didaftarkan manual ke repo di GitHub — lihat
+commit awal sesi deployment. Docker di VM itu menyimpan data-root dan swap di
+disk kedua (`/mnt/storage/workspace`), jadi image toolchain dan cache BuildKit
+tidak memenuhi disk sistem. Deploy workflow (`deploy.yml`) berjalan di sana;
+CI ringan (`ci.yml`) tetap di runner GitHub.
 
-- runner bawaan GitHub gratis untuk repo publik dan murah untuk privat, pada
-  dua repo sekecil ini;
-- self-hosted runner adalah mesin yang harus ditambal, dipantau dan dibayar
-  saat menganggur — infrastruktur baru untuk masalah yang belum ada;
-- alasan kuat memakainya biasanya akses ke jaringan privat, dan CI di sini
-  tidak membutuhkannya: tes unit tidak keluar jaringan, dan tes integrasi
-  menuju worksh.io staging lewat internet.
-
-**Kapan ini berubah:** begitu CI perlu menyentuh Memorystore, Cloud SQL
-privat, atau works-server yang hanya ada di dalam VPC (Fase 6 ke atas).
-Saat itu tambahkan `gh-runner-mig-container-vm` dari modul yang sama —
-submodulnya sudah dipilih, tinggal dipasang.
+Alasan tetap tidak memakai submodul runner: VM-nya satu, tidak butuh
+auto-scaling/MIG, dan belum ada yang perlu dikelola Terraform darinya. Begitu
+runner bertambah banyak atau perlu diamankan otomatis, pindahkan ke
+`gh-runner-mig-container-vm` dari modul yang sama.
 
 ## Jalan pertama kali
 
