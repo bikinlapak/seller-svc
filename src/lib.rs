@@ -1,15 +1,26 @@
-//! seller-svc — backend for the bikinlapak seller app.
+//! seller-svc — backend for the bikinlapak seller app, and (for the
+//! hackathon build) the PasStok engine behind its Shop Assistant.
 //!
-//! This service owns no product or page data of its own: products and the web
-//! builder live in worksh.io and are reached through the works-server GraphQL
-//! API (see [`works`]).
+//! Products, stock and the web builder belong to worksh.io and are reached
+//! through the works-server GraphQL API (see [`works`]). Until that is wired,
+//! [`shop::demo`] supplies the same shapes for one tenant. PasStok itself —
+//! forecast, reorder and expiry rules, the agent, the executor — lives in
+//! [`engine`], [`agent`] and [`executor`], with its state in [`store`].
 
+pub mod agent;
+pub mod clock;
 pub mod config;
 pub mod contract;
+pub mod engine;
 pub mod error;
+pub mod executor;
+pub mod fmt;
+pub mod media;
 pub mod routes;
-pub mod seed;
+pub mod shop;
+pub mod store;
 pub mod token;
+pub mod views;
 pub mod works;
 
 use std::sync::Arc;
@@ -31,6 +42,19 @@ pub struct AppState {
     pub action_keys: Arc<token::ActionKeys>,
     /// Record of spent tokens — single use is enforced here.
     pub tokens: Arc<token::TokenGuard>,
+    /// PasStok state for the tenant.
+    pub store: Arc<store::Store>,
+    pub vision: Arc<agent::vision::VisionEngine>,
+}
+
+/// The demo tenant at the start of its day, with the morning run done.
+pub fn demo_state(keys: &token::ActionKeys) -> Result<store::State, AppError> {
+    let today = clock::today();
+    let data = shop::demo::build(today);
+    let mut state = store::State::new(data, today);
+    state.waste = shop::demo::past_waste(&state.data, today);
+    agent::morning_run(&mut state, keys)?;
+    Ok(state)
 }
 
 impl AppState {
@@ -59,11 +83,20 @@ impl AppState {
             }
         };
 
+        let state = demo_state(&action_keys)?;
+        let vision = agent::vision::VisionEngine::from_config(
+            config.gemini_api_key.as_deref(),
+            &config.gemini_model,
+        );
+        tracing::info!(vision = %vision.source(), "PasStok ready");
+
         Ok(Self {
             config: Arc::new(config),
             works,
             action_keys: Arc::new(action_keys),
             tokens: Arc::new(token::TokenGuard::new()),
+            store: Arc::new(store::Store::new(state)),
+            vision: Arc::new(vision),
         })
     }
 }

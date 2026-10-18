@@ -24,8 +24,9 @@ dotenvy = "0.15"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 jsonwebtoken = "9"
 ulid = "1"
-chrono = { version = "0.4", default-features = false, features = ["serde"] }
+chrono = { version = "0.4", default-features = false, features = ["serde", "clock", "std"] }
 ring = "0.17"
+tokio-stream = { version = "0.1", features = ["sync"] }
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
