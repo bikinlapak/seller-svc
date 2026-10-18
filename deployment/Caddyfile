@@ -1,0 +1,27 @@
+# Edge proxy for the local stack: http://localhost:3000 → seller-app.
+#
+# Why it exists: adapter-node in SvelteKit 3 no longer reads ORIGIN and
+# assumes https when no protocol header is set. Caddy sets X-Forwarded-Proto
+# and X-Forwarded-Host the way Cloud Run's front end does, and seller-app
+# trusts them (PROTOCOL_HEADER / HOST_HEADER) — the same setup as production.
+#
+# Plain HTTP only: this is a local stack, so no certificates are requested.
+{
+	auto_https off
+	admin off
+}
+
+:80 {
+	encode zstd gzip
+
+	reverse_proxy seller-app:3000 {
+		# Server-sent events (thread live updates) must not be buffered.
+		flush_interval -1
+	}
+
+	# Set LOG_REQUESTS=1 in .env to log each request with its headers —
+	# handy when chasing a CSRF or proxy-header problem. Off by default.
+	log
+	@quiet expression {env.LOG_REQUESTS} != "1"
+	log_skip @quiet
+}

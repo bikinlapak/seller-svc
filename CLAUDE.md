@@ -19,7 +19,7 @@ cargo run                       # reads .env (optional), see .env.example
 cargo test                      # unit tests (config) + tests/http.rs (router via tower oneshot)
 cargo clippy --all-targets
 cargo fmt
-docker compose up --build -d   # full local stack: seller-svc + ../seller-app + edge proxy on :3000
+cd deployment && docker compose up --build -d   # full local stack on :3000, see deployment/
 ```
 
 ## Layout
@@ -47,6 +47,7 @@ docker compose up --build -d   # full local stack: seller-svc + ../seller-app + 
 - `src/token.rs`: action tokens — Ed25519 JWT, single use, tenant and quantity
   cap. The only path by which a suggestion becomes a write.
 - `infra/`: Terraform for both services (see `infra/README.md`).
+- `deployment/`: the local stack — `docker-compose.yml` (seller-svc, `../../seller-app`, Caddy edge on :3000), `Caddyfile`, and `.env.example` (copy to `.env`; every value has a default).
 - `src/works/`: `WorksClient::execute`, a generic GraphQL client. Add typed queries here, not in handlers.
 
 ## Notes

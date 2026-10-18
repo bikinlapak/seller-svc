@@ -1,37 +1,33 @@
-# Local stack: seller-app (SvelteKit, adapter-node) in front of seller-svc (Rust).
+# Local stack: edge (Caddy) → seller-app (SvelteKit) → seller-svc (Rust).
 #
-# Lives in seller-svc; expects ../seller-app checked out next to it.
+# Expects ../seller-app checked out next to seller-svc. From this directory:
 #
-#   docker compose up --build -d      # from seller-svc/
+#   cp .env.example .env              # optional; every value has a default
+#   docker compose up --build -d
 #   open http://localhost:3000        # through the proxy (use this one)
 #   curl http://localhost:8080/healthz
-#   ../e2e.sh                         # end-to-end check against the running stack
+#   ../../e2e.sh                      # end-to-end check against the running stack
 #
-# Why the `edge` proxy: adapter-node in SvelteKit 3 no longer reads ORIGIN and
-# assumes https when no protocol header is set, so every form POST on plain
-# http://localhost would fail the CSRF check (403). Caddy sets
-# X-Forwarded-Proto / X-Forwarded-Host the way Cloud Run's front end does, and
-# seller-app is configured to trust them — same setup as production.
+# Caddy's config is in ./Caddyfile (why the proxy exists is explained there).
 
 # Same project name as before the move, so existing containers are reused.
 name: bikinlapak
 
 services:
   seller-svc:
-    build: .
+    build: ..
     environment:
       SELLER_SVC_BIND_ADDR: 0.0.0.0:8080
       SELLER_SVC_LOG_JSON: "false"
       SELLER_SVC_WORKS_GRAPHQL_URL: ${SELLER_SVC_WORKS_GRAPHQL_URL:-http://host.docker.internal:8000/graphql}
-      SELLER_SVC_CORS_ORIGINS: http://localhost:3000
-      # Empty = ephemeral key: action tokens die on every restart. Fine locally.
+      SELLER_SVC_CORS_ORIGINS: http://localhost:${APP_PORT:-3000}
+      # See .env.example for what each of these does when empty.
       SELLER_SVC_ACTION_KEY: ${SELLER_SVC_ACTION_KEY:-}
-      # Empty = the vision stand-in; set a key to read waste photos with Gemini.
       SELLER_SVC_GEMINI_API_KEY: ${SELLER_SVC_GEMINI_API_KEY:-}
       SELLER_SVC_GEMINI_MODEL: ${SELLER_SVC_GEMINI_MODEL:-gemini-2.5-flash}
-      RUST_LOG: seller_svc=debug,tower_http=info
+      RUST_LOG: ${RUST_LOG:-seller_svc=debug,tower_http=info}
     ports:
-      - "8080:8080"
+      - "${SVC_PORT:-8080}:8080"
     healthcheck:
       # The runtime image has no curl; bash's /dev/tcp is enough for liveness.
       test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /healthz HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q '200 OK' <&3"]
@@ -40,11 +36,11 @@ services:
       retries: 10
 
   seller-app:
-    build: ../seller-app
+    build: ../../seller-app
     environment:
       PORT: 3000
       SELLER_SVC_URL: http://seller-svc:8080
-      SELLER_SVC_MOCK: "false"
+      SELLER_SVC_MOCK: ${SELLER_SVC_MOCK:-false}
       PROTOCOL_HEADER: x-forwarded-proto
       HOST_HEADER: x-forwarded-host
     depends_on:
@@ -58,9 +54,12 @@ services:
 
   edge:
     image: caddy:2-alpine
-    command: caddy reverse-proxy --from :80 --to seller-app:3000
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    environment:
+      LOG_REQUESTS: ${LOG_REQUESTS:-0}
     ports:
-      - "3000:80"
+      - "${APP_PORT:-3000}:80"
     depends_on:
       seller-app:
         condition: service_healthy
