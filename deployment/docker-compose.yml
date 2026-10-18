@@ -53,8 +53,23 @@ services:
       timeout: 3s
       retries: 10
 
+  # seller-app's runtime base (../../seller-app/Dockerfile.base), same idea.
+  front-base:
+    build:
+      context: ../../seller-app
+      dockerfile: Dockerfile.base
+    image: bikinlapak-front-base:local
+    command: ["true"]
+    restart: "no"
+
   seller-app:
-    build: ../../seller-app
+    build:
+      context: ../../seller-app
+      dockerfile: Dockerfile.app
+      args:
+        BASE_IMAGE: bikinlapak-front-base
+      additional_contexts:
+        bikinlapak-front-base: service:front-base
     environment:
       PORT: 3000
       SELLER_SVC_URL: http://seller-svc:8080
