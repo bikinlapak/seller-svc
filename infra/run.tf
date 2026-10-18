@@ -189,7 +189,8 @@ resource "google_cloud_run_v2_service" "seller_app" {
 
       startup_probe {
         http_get {
-          path = "/asisten"
+          # The app's assistant page (English route; /asisten was stale).
+          path = "/assistant"
         }
         initial_delay_seconds = 3
         period_seconds        = 3

@@ -8,6 +8,12 @@ rust-version = "1.97"
 name = "seller_svc"
 path = "src/lib.rs"
 
+# Sandbox for trying Gemini models on Vertex AI; not part of the service.
+# Run with: make gemini-sandbox  (or cargo run --bin gemini_sandbox)
+[[bin]]
+name = "gemini_sandbox"
+path = "src/gemini_sandbox/main.rs"
+
 [dependencies]
 axum = "0.8"
 tokio = { version = "1", features = ["full"] }

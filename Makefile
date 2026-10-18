@@ -37,7 +37,7 @@ SCP           := gcloud compute scp --zone=$(RUNNER_ZONE)
 
 URL := $(shell gcloud run services describe $(SERVICE) --region=$(REGION) --project=$(PROJECT) --format='value(status.url)' 2>/dev/null)
 
-.PHONY: help grants auth base build push deploy health release vm-sync vm-base vm-build vm-push vm-release
+.PHONY: help grants auth base build push deploy health release vm-sync vm-base vm-build vm-push vm-release gemini-smoke
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -87,6 +87,9 @@ health: ## Check /health on the deployed service (identity token via the runtime
 		echo "cannot mint identity token (needs roles/iam.serviceAccountTokenCreator on $(SA)); falling back to revision status"; \
 		gcloud run services describe $(SERVICE) --region=$(REGION) --project=$(PROJECT) --format='table(status.latestReadyRevisionName)'; \
 	fi
+
+gemini-sandbox: ## Try Gemini models on Vertex AI via ADC (no API key). src/gemini_sandbox/
+	cargo run --bin gemini_sandbox
 
 release: auth base build push deploy health ## Full manual deploy, local build
 
