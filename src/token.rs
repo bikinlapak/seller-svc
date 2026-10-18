@@ -112,6 +112,18 @@ impl ActionKeys {
 
 /// Build the claims for one suggestion.
 pub fn suggestion_claims(tenant: &str, suggestion: &str, max_qty: i64, unit: &str) -> ActionClaims {
+    action_claims(tenant, "create_po", suggestion, max_qty, unit)
+}
+
+/// Claims for any card action: `create_po`, `markdown`, `create_special`,
+/// `record_waste`, `donate`. The executor dispatches on `act`.
+pub fn action_claims(
+    tenant: &str,
+    act: &str,
+    suggestion: &str,
+    max_qty: i64,
+    unit: &str,
+) -> ActionClaims {
     let iat = now();
     ActionClaims {
         iss: ISS.into(),
@@ -120,7 +132,7 @@ pub fn suggestion_claims(tenant: &str, suggestion: &str, max_qty: i64, unit: &st
         jti: ulid::Ulid::new().to_string(),
         iat,
         exp: iat + TTL_SECONDS,
-        act: "create_po".into(),
+        act: act.into(),
         sug: suggestion.into(),
         max_qty,
         unit: unit.into(),

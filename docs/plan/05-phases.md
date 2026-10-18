@@ -12,16 +12,33 @@ Build the **demo path first, breadth second**: within any phase, the tasks that
 the 7-minute demo touches come before the ones that only make the product
 complete.
 
-> **Progress, 2026-10-15.** The HTTP layer `seller-app` consumes is built and
-> under test (32 tests): contract types, the seven endpoints, error mapping,
-> and the full action-token path with Ed25519 signing, single use, tenant and
-> quantity-cap checks. `seller-app` runs against it with `SELLER_SVC_MOCK=false`
-> and the approve → PO path works end to end in a browser.
+> **Progress, 2026-10-18.** PasStok runs end to end **inside seller-svc, in
+> memory, on a deterministic demo tenant** (decision for the hackathon: engine
+> here rather than worksh.io; local stand-ins rather than GCP). 97 tests (69
+> unit, 28 router) and `e2e.sh` (45 checks) pass.
 >
-> What is **not** real yet: the data. `src/seed.rs` stands in for worksh.io and
-> the `passtok` schema, so every endpoint serves the right shape with demo
-> content. No GraphQL call, no Postgres, no BigQuery, no Pub/Sub, no Gemini.
-> Items are ticked only where they are genuinely done.
+> Real and tested: forecast with censored-demand handling, cold start and
+> holdout WAPE vs a 4-week baseline (Phase 4 rules, TimesFM stand-in); reorder
+> rule with expiry cap, pack/MOQ rounding, supplier grouping, learned edits and
+> repeated-waste cut; FEFO expiry risk with ranked actions; FEFO-aware cover
+> (Phase 5 rules); agent morning run, grounded Q&A, closures saved as calendar
+> overrides, SSE "thread changed" stream, report → moderation queue, executor
+> with validate → claim → apply, idempotency keys, audit log and event outbox
+> (Phase 6); waste photo upload with server-side EXIF strip, grounding to
+> catalog candidates, confirm → write-off by destination (Phase 7); legal
+> destination filter, donation with checklist gate and PDF receipt, daily
+> special → work order + listing, diversion score and weekly digest
+> (Phase 8); product detail, dashboard, waste report.
+>
+> Still stand-ins or missing: **worksh.io** (no GraphQL call yet — writes go
+> to the in-memory ledger, each marked `TODO(worksh.io)` with its mutation);
+> **Postgres** (state resets on restart); **BigQuery / AI.FORECAST / Pub/Sub**
+> (the forecast is a weekday-seasonal model, the outbox is a Vec);
+> **Gemini** (explanations are templates; vision is a stub unless
+> `SELLER_SVC_GEMINI_API_KEY` is set — that path is written but untested);
+> **GCS** for photos and receipts; push and WhatsApp templates (Phase 9);
+> auth/session (Phase 1). Boxes below stay unticked until the real service
+> behind them is wired.
 
 ---
 

@@ -14,6 +14,9 @@ pub struct Config {
     /// Ed25519 private key (PKCS#8 DER, base64) for action tokens. Empty =
     /// generate a throwaway key at start-up; development only.
     pub action_key_pkcs8: Option<Vec<u8>>,
+    /// Gemini API key for waste-photo vision. Empty = the local stand-in.
+    pub gemini_api_key: Option<String>,
+    pub gemini_model: String,
 }
 
 impl Config {
@@ -49,12 +52,18 @@ impl Config {
             _ => None,
         };
 
+        let gemini_api_key = get("SELLER_SVC_GEMINI_API_KEY").filter(|k| !k.trim().is_empty());
+        let gemini_model =
+            get("SELLER_SVC_GEMINI_MODEL").unwrap_or_else(|| "gemini-2.5-flash".into());
+
         Ok(Self {
             bind_addr,
             log_json,
             works_graphql_url,
             cors_allowed_origins,
             action_key_pkcs8,
+            gemini_api_key,
+            gemini_model,
         })
     }
 }
