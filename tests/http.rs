@@ -69,6 +69,14 @@ async fn healthz_returns_ok() {
 }
 
 #[tokio::test]
+async fn health_alias_returns_ok() {
+    let svc = Svc::new();
+    let (status, json) = svc.get("/health").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["status"], "ok");
+}
+
+#[tokio::test]
 async fn home_has_the_shape_seller_app_expects() {
     let svc = Svc::new();
     let (status, json) = svc.get("/v1/home").await;
