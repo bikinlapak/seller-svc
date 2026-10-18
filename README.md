@@ -36,6 +36,45 @@ stand-in content.
 | GET    | `/v1/stock`              | stock by location + summary           |
 | GET    | `/v1/builder/pages`      | 501, not implemented yet              |
 
+## Infrastructure (Google Cloud)
+
+Managed by Terraform in [`infra/`](infra/README.md) — one root module for both
+seller services, applied per environment.
+
+| Concern | Choice |
+| ------- | ------ |
+| Secret management | Secret Manager; only the Ed25519 action-key secret. Filled manually (base64 of PKCS#8 DER), never in Terraform state |
+| Container registry | Artifact Registry (`bikinlapak-<env>` repo, Docker format) with cleanup policies: keep 10 most recent tags, delete older than 30 days |
+| Compute | Cloud Run (min 0 / max 4 instances); startup + liveness probes on `/healthz`, which deliberately does not touch works-server |
+| CI/CD identity | Workload Identity Federation — GitHub Actions exchanges an OIDC token for short-lived GCP credentials; no service-account keys exist anywhere |
+| Runner | Self-hosted GitHub Actions runner on a GCP VM (`github-runner`, Debian, docker data-root and swap on a second disk). CI (fmt/clippy/test) stays on GitHub-hosted runners |
+| Terraform scope | Terraform owns services, IAM, WIF and secrets *containers*; the deployed image is owned by the workflow (`lifecycle.ignore_changes` on image) |
+
+### Image strategy: fat base + thin app
+
+Two Dockerfiles, mirroring the 2fa-gateway pattern:
+
+- `Dockerfile.base` — the fat image, built once per toolchain upgrade, tagged
+  `v1`. For seller-svc it is the Rust toolchain (`rust:1.97-bookworm`); deploys
+  never touch Docker Hub again.
+- `Dockerfile.app` — the thin image: build inside `BASE_IMAGE`, copy the
+  binary onto `debian:bookworm-slim`. Tagged with the commit SHA.
+
+### Workflow strategy
+
+On merge to `main`/`master`, `deploy.yml` runs on the self-hosted runner:
+
+1. Authenticate to GCP via WIF (OIDC, no stored keys)
+2. **Verify or build the base image** — `docker pull` it; only if missing,
+   build `Dockerfile.base` and push (~once per toolchain bump)
+3. Build the thin app image from the current commit, push `:sha` to Artifact
+   Registry
+4. `gcloud run deploy` the new revision; internal startup/liveness probes
+   validate `/healthz` before traffic shifts
+
+Everything heavier (services, IAM, secrets, WIF) is Terraform's job; the
+workflow stays thin on purpose.
+
 ## Action tokens
 
 `POST /v1/actions/{token}` is the only endpoint that changes state on the

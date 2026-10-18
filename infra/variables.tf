@@ -1,75 +1,76 @@
 variable "project_id" {
-  description = "Project GCP tujuan. Satu project per lingkungan."
+  description = "Target GCP project. One project per environment."
   type        = string
 }
 
 variable "region" {
   description = <<-EOT
-    Region Cloud Run. Jakarta kalau bisa — penjualnya di sana dan latensi
-    terasa saat demo. Vertex AI belum lengkap di asia-southeast2, jadi
-    pemanggilan model boleh jatuh ke asia-southeast1 (lihat ADR-0006).
+    Cloud Run region. Jakarta where possible — the sellers are there and
+    latency is felt during demos. Vertex AI is not complete in
+    asia-southeast2 yet, so model calls may fall through to
+    asia-southeast1 (see ADR-0006).
   EOT
   type        = string
   default     = "asia-southeast2"
 }
 
 variable "env" {
-  description = "Nama lingkungan, dipakai sebagai akhiran nama resource."
+  description = "Environment name, used as the suffix of resource names."
   type        = string
 
   validation {
     condition     = can(regex("^[a-z][a-z0-9-]{1,14}$", var.env))
-    error_message = "env harus huruf kecil, angka dan tanda hubung, 2-15 karakter."
+    error_message = "env must be lowercase letters, digits and dashes, 2-15 characters."
   }
 }
 
 variable "github_owner" {
-  description = "Pemilik repo di GitHub. Dipakai sebagai pagar WIF."
+  description = "Owner of the GitHub repos. Used as the WIF fence."
   type        = string
   default     = "bikinlapak"
 }
 
 variable "github_repos" {
   description = <<-EOT
-    Repo yang boleh men-deploy. Tiap repo dapat binding WIF sendiri, jadi
-    repo lain milik org yang sama tetap tidak bisa memakai deployer ini.
+    Repos allowed to deploy. Each repo gets its own WIF binding, so another
+    repo of the same org still cannot use this deployer.
   EOT
   type        = list(string)
   default     = ["seller-svc", "seller-app"]
 }
 
 variable "works_graphql_url" {
-  description = "Endpoint GraphQL works-server (worksh.io) untuk lingkungan ini."
+  description = "works-server GraphQL endpoint (worksh.io) for this environment."
   type        = string
 }
 
 variable "seller_svc_image" {
   description = <<-EOT
-    Image seller-svc lengkap dengan tag. Dibiarkan kosong saat apply pertama:
-    Terraform memasang image placeholder, lalu GitHub Actions yang mengganti
-    dengan hasil build. Lihat lifecycle ignore_changes di run.tf.
+    Full seller-svc image with tag. Left empty on first apply: Terraform
+    installs a placeholder image, then GitHub Actions replaces it with the
+    build result. See lifecycle ignore_changes in run.tf.
   EOT
   type        = string
   default     = ""
 }
 
 variable "seller_app_image" {
-  description = "Image seller-app lengkap dengan tag. Sama perlakuannya."
+  description = "Full seller-app image with tag. Treated the same way."
   type        = string
   default     = ""
 }
 
 variable "min_instances_svc" {
   description = <<-EOT
-    seller-svc menahan koneksi SSE begitu Fase 6 jalan, jadi min 1 di
-    lingkungan demo. Di luar itu 0 supaya tidak ada biaya saat menganggur.
+    seller-svc holds SSE connections once Phase 6 lands, so min 1 in the
+    demo environment. Otherwise 0 so there is no idle cost.
   EOT
   type        = number
   default     = 0
 }
 
 variable "max_instances" {
-  description = "Pagar biaya: batas atas instance per layanan."
+  description = "Cost fence: upper bound of instances per service."
   type        = number
   default     = 4
 }

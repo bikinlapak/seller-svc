@@ -2,9 +2,9 @@ resource "google_cloud_run_v2_service" "seller_svc" {
   name     = "seller-svc-${local.suffix}"
   location = var.region
 
-  # Tidak ada allUsers di iam.tf, jadi hanya pemanggil ber-IAM yang masuk.
-  # INGRESS_ALL tetap dipakai karena seller-app memanggil lewat internet
-  # dengan token OIDC; kalau nanti ada VPC connector, turunkan ke INTERNAL.
+  # No allUsers in iam.tf, so only IAM-authorized callers get in.
+  # INGRESS_ALL is still used because seller-app calls it over the internet
+  # with an OIDC token; if a VPC connector arrives later, lower to INTERNAL.
   ingress             = "INGRESS_TRAFFIC_ALL"
   deletion_protection = false
 
@@ -19,8 +19,8 @@ resource "google_cloud_run_v2_service" "seller_svc" {
     containers {
       image = local.seller_svc_image
 
-      # seller-svc membaca SELLER_SVC_BIND_ADDR, bukan PORT yang disuntik
-      # Cloud Run, jadi portnya dipatok di sini supaya keduanya sepakat.
+      # seller-svc reads SELLER_SVC_BIND_ADDR, not the PORT that Cloud Run
+      # injects, so the port is pinned here to keep the two in agreement.
       ports {
         container_port = 8080
       }
@@ -40,9 +40,8 @@ resource "google_cloud_run_v2_service" "seller_svc" {
         value = var.works_graphql_url
       }
 
-      # Browser tidak pernah memanggil seller-svc langsung — seller-app yang
-      # memanggil dari sisi server — jadi tidak ada origin yang perlu
-      # diizinkan. Dikosongkan dengan sengaja.
+      # A browser never calls seller-svc directly — seller-app calls it
+      # server-side — so there is no origin to allow. Left empty on purpose.
       env {
         name  = "SELLER_SVC_CORS_ORIGINS"
         value = ""
@@ -74,8 +73,8 @@ resource "google_cloud_run_v2_service" "seller_svc" {
         failure_threshold     = 10
       }
 
-      # /readyz menyentuh works-server; dipakai untuk liveness akan membuat
-      # Cloud Run me-restart seller-svc hanya karena upstream sedang turun.
+      # /readyz would touch works-server; using it for liveness would make
+      # Cloud Run restart seller-svc just because an upstream is down.
       liveness_probe {
         http_get {
           path = "/healthz"
@@ -85,8 +84,9 @@ resource "google_cloud_run_v2_service" "seller_svc" {
     }
   }
 
-  # Image diganti oleh GitHub Actions, bukan oleh Terraform. Tanpa ini tiap
-  # `terraform apply` akan mengembalikan layanan ke image lama di tfvars.
+  # The image is replaced by GitHub Actions, not by Terraform. Without this,
+  # every `terraform apply` would roll the service back to the old tfvars
+  # image.
   lifecycle {
     ignore_changes = [
       template[0].containers[0].image,
@@ -97,7 +97,7 @@ resource "google_cloud_run_v2_service" "seller_svc" {
 
   depends_on = [
     google_project_service.ini,
-    google_secret_manager_secret_iam_member.svc_baca_kunci_aksi,
+    google_secret_manager_secret_iam_member.svc_read_action_key,
   ]
 }
 
@@ -119,13 +119,10 @@ resource "google_cloud_run_v2_service" "seller_app" {
     containers {
       image = local.seller_app_image
 
+      # Cloud Run injects PORT itself (a reserved env name); SvelteKit's
+      # adapter-node reads it, so listening on that port is enough.
       ports {
-        container_port = 3000
-      }
-
-      env {
-        name  = "PORT"
-        value = "3000"
+        container_port = 8080
       }
 
       env {
@@ -138,19 +135,19 @@ resource "google_cloud_run_v2_service" "seller_app" {
         value = "false"
       }
 
-      # seller-svc menolak pemanggil tanpa IAM, jadi seller-app mengambil ID
-      # token dari metadata server dengan audience ini. Lihat
-      # src/lib/server/api/http.ts di seller-app.
+      # seller-svc refuses callers without IAM, so seller-app fetches an ID
+      # token from the metadata server with this audience. See
+      # src/lib/server/api/http.ts in seller-app.
       env {
         name  = "SELLER_SVC_AUDIENCE"
         value = google_cloud_run_v2_service.seller_svc.uri
       }
 
-      # WAJIB. adapter-node di SvelteKit 3 tidak lagi membaca ORIGIN dan
-      # menganggap protokolnya https kalau tidak diberi tahu; di belakang
-      # proxy Cloud Run, tanpa dua header ini setiap POST form ditolak
-      # "Cross-site POST form submissions are forbidden" — artinya semua
-      # tombol Setujui mati, dan tidak terlihat sama sekali saat dev.
+      # REQUIRED. SvelteKit 3's adapter-node no longer reads ORIGIN and
+      # assumes https when not told otherwise; behind the Cloud Run proxy,
+      # without these two headers every form POST is rejected with
+      # "Cross-site POST form submissions are forbidden" — meaning every
+      # Approve button dies, and it is completely invisible in dev mode.
       env {
         name  = "PROTOCOL_HEADER"
         value = "x-forwarded-proto"

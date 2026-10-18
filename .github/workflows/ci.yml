@@ -21,13 +21,13 @@ jobs:
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test --all-targets
 
-      # works-core melarang aws-lc-sys masuk pohon dependensi: rustls harus
-      # tetap memakai ring, supaya build tidak menarik cmake. Gampang bocor
-      # lewat default feature, jadi dijaga di CI, bukan dengan ingatan.
-      - name: Tidak ada aws-lc-sys
+      # works-core forbids aws-lc-sys in the dependency tree: rustls must
+      # stay on ring so the build does not pull in cmake. It leaks easily
+      # through default features, so it is guarded in CI, not by memory.
+      - name: No aws-lc-sys
         run: |
           if cargo tree -i aws-lc-sys >/dev/null 2>&1; then
-            echo "::error::aws-lc-sys masuk ke pohon dependensi"
+            echo "::error::aws-lc-sys entered the dependency tree"
             cargo tree -i aws-lc-sys
             exit 1
           fi
