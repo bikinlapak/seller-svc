@@ -10,8 +10,20 @@
 //! - "how much oat milk is left?" → stock, lots and run-out day;
 //! - anything else → what the assistant can help with (it stays in scope:
 //!   stock and procurement only, decision L28).
+//!
+//! Understanding and answering are separate steps. [`Intent`] is what the
+//! merchant asked; it comes from Gemini when configured ([`llm_intent`]) and
+//! from keyword rules otherwise ([`rules`]). [`answer_intent`] then computes
+//! the answer from the engine — the same code whichever understood the
+//! question, so the model can misread a question but cannot change a number.
+//! [`localise`] optionally rewords the computed answer into the merchant's
+//! language, and is rejected if it introduces any number.
+
+use std::sync::Arc;
 
 use chrono::{Datelike, Duration, NaiveDate};
+use serde::Deserialize;
+use serde_json::json;
 
 use crate::AppError;
 use crate::agent::analysis::{Analysis, analyze};
@@ -23,13 +35,69 @@ use crate::shop::Product;
 use crate::store::{State, SuggestionKind};
 use crate::token::ActionKeys;
 
-/// Append the merchant's message and the assistant's answer to `topic`.
-pub fn reply(
-    state: &mut State,
-    keys: &ActionKeys,
-    topic: &str,
-    text: &str,
-) -> Result<(), AppError> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IntentKind {
+    Why,
+    WhatIf,
+    Closure,
+    Stock,
+    Other,
+}
+
+/// What the merchant asked, with the slots the engine needs.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct Intent {
+    pub kind: IntentKind,
+    #[serde(default)]
+    pub quantity: Option<i64>,
+    #[serde(default)]
+    pub closure_days: Option<i64>,
+    #[serde(default)]
+    pub next_week: bool,
+    /// Product words as the merchant wrote them ("oat milk").
+    #[serde(default)]
+    pub product: Option<String>,
+}
+
+/// Keyword understanding: the fallback, and the only path without Gemini.
+pub fn rules(text: &str) -> Intent {
+    let lower = text.to_lowercase();
+    let next_week = lower.contains("next week") || lower.contains("minggu depan");
+    let base = |kind| Intent {
+        kind,
+        quantity: None,
+        closure_days: None,
+        next_week,
+        product: None,
+    };
+    if let Some(days) = closure_days(&lower) {
+        return Intent {
+            closure_days: Some(days),
+            ..base(IntentKind::Closure)
+        };
+    }
+    if is_stock_question(&lower) {
+        return Intent {
+            product: Some(lower.clone()),
+            ..base(IntentKind::Stock)
+        };
+    }
+    if is_why(&lower) {
+        return base(IntentKind::Why);
+    }
+    if let Some(n) = first_number(&lower) {
+        return Intent {
+            quantity: Some(n),
+            ..base(IntentKind::WhatIf)
+        };
+    }
+    base(IntentKind::Other)
+}
+
+/// Push the merchant's message. The answer follows separately, because
+/// understanding it may take a model call made outside the state lock.
+pub fn push_staff(state: &mut State, topic: &str, text: &str) {
     let id = state.next_id("m");
     state.push(
         topic,
@@ -41,27 +109,41 @@ pub fn reply(
             actions: None,
         },
     );
-    let answer = answer(state, keys, topic, text)?;
-    state.push(topic, answer);
-    Ok(())
 }
 
-fn answer(
+/// Rules only, in one step — what the keyword path and tests use.
+pub fn reply(
     state: &mut State,
     keys: &ActionKeys,
     topic: &str,
     text: &str,
+) -> Result<(), AppError> {
+    push_staff(state, topic, text);
+    let answer = answer_intent(state, keys, topic, &rules(text))?;
+    state.push(topic, answer);
+    Ok(())
+}
+
+/// Compute the answer to an understood question. Every figure comes from the
+/// engine or the stored suggestion inputs.
+pub fn answer_intent(
+    state: &mut State,
+    keys: &ActionKeys,
+    topic: &str,
+    intent: &Intent,
 ) -> Result<Message, AppError> {
-    let lower = text.to_lowercase();
     let id = state.next_id("m");
 
-    if let Some(days) = closure_days(&lower) {
-        return closure(state, keys, topic, &lower, days, id);
+    if intent.kind == IntentKind::Closure
+        && let Some(days) = intent.closure_days.filter(|d| (1..=14).contains(d))
+    {
+        return closure(state, keys, topic, intent.next_week, days, id);
     }
 
     // Product questions work from any thread.
-    if is_stock_question(&lower)
-        && let Some(p) = find_product(state, &lower).cloned()
+    let product_words = intent.product.clone().unwrap_or_default().to_lowercase();
+    if intent.kind == IntentKind::Stock
+        && let Some(p) = find_product(state, &product_words).cloned()
     {
         let msg = match analyze(state, &p.id) {
             Some(a) => explain::stock_answer(&a, &p, state),
@@ -72,7 +154,7 @@ fn answer(
 
     let open = open_reorder(state, topic);
 
-    if is_why(&lower) {
+    if intent.kind == IntentKind::Why {
         if let Some((sug_id, product_id)) = &open {
             let _ = sug_id;
             if let (Some(a), Some(p)) = (analyze(state, product_id), state.data.product(product_id))
@@ -89,7 +171,8 @@ fn answer(
         }
     }
 
-    if let Some(n) = first_number(&lower)
+    if intent.kind == IntentKind::WhatIf
+        && let Some(n) = intent.quantity
         && let Some((sug_id, product_id)) = open
     {
         return what_if(state, keys, &sug_id, &product_id, n, id);
@@ -207,11 +290,11 @@ fn closure(
     state: &mut State,
     keys: &ActionKeys,
     topic: &str,
-    lower: &str,
+    next_week: bool,
     days: i64,
     id: String,
 ) -> Result<Message, AppError> {
-    let start = if lower.contains("next week") || lower.contains("minggu depan") {
+    let start = if next_week {
         next_monday(state.today)
     } else {
         state.today + Duration::days(1)
@@ -222,11 +305,15 @@ fn closure(
             state.data.closures.push(*d);
         }
     }
-    let span = format!(
-        "{} to {}",
-        crate::clock::relative_day(dates[0], state.today),
-        crate::clock::relative_day(*dates.last().unwrap_or(&start), state.today)
-    );
+    // "tomorrow and Tuesday", "Monday to Wednesday": unambiguous in English
+    // and in translation.
+    let first = crate::clock::relative_day(dates[0], state.today);
+    let last = crate::clock::relative_day(*dates.last().unwrap_or(&start), state.today);
+    let span = match dates.len() {
+        1 => first,
+        2 => format!("{first} and {last}"),
+        _ => format!("{first} to {last}"),
+    };
     state.emit(
         "passtok.calendar.override",
         serde_json::json!({ "closed": dates.iter().map(|d| d.to_string()).collect::<Vec<_>>() }),
@@ -399,6 +486,144 @@ fn find_product<'a>(state: &'a State, s: &str) -> Option<&'a Product> {
         .map(|(_, p)| p)
 }
 
+/* ---------- Gemini: understanding and wording ---------- */
+
+/// Understand a message with Gemini. `None` on any failure: the caller uses
+/// [`rules`]. The model only classifies and extracts slots; it never sees
+/// or produces an answer.
+pub async fn llm_intent(
+    g: &Arc<crate::llm::Gemini>,
+    text: &str,
+    products: &[String],
+    open_suggestion: Option<&str>,
+) -> Option<Intent> {
+    let system = "You classify one message a café owner sends to their stock assistant. \
+        kind: why = asks the reason behind a suggestion; what_if = asks about ordering a \
+        different quantity (put it in quantity); closure = says the shop will be closed for \
+        some days (closure_days, and next_week=true if they mean next week); stock = asks how \
+        much of a product is left (product = the product words); other = anything else. \
+        Messages may be English or Indonesian. Extract only what is written; never guess a \
+        number.";
+    let prompt = format!(
+        "Products: {}\nOpen suggestion in this thread: {}\nMessage: {text}",
+        products.join(", "),
+        open_suggestion.unwrap_or("none")
+    );
+    let schema = json!({
+        "type": "OBJECT",
+        "properties": {
+            "kind": {"type": "STRING", "enum": ["why", "what_if", "closure", "stock", "other"]},
+            "quantity": {"type": "INTEGER", "nullable": true},
+            "closure_days": {"type": "INTEGER", "nullable": true},
+            "next_week": {"type": "BOOLEAN"},
+            "product": {"type": "STRING", "nullable": true}
+        },
+        "required": ["kind", "next_week"]
+    });
+    match g
+        .json::<Intent>(system, vec![json!({ "text": prompt })], schema)
+        .await
+    {
+        Ok(mut i) => {
+            // A number the merchant did not write is dropped, not trusted.
+            let written = crate::llm::numbers_in(text);
+            let keep = |n: Option<i64>| n.filter(|v| written.contains(&v.to_string()) || *v <= 10);
+            i.quantity = i
+                .quantity
+                .filter(|v| written.contains(&v.to_string()))
+                .or_else(|| first_number(&text.to_lowercase()));
+            i.closure_days = keep(i.closure_days);
+            Some(i)
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "gemini intent failed; using rules");
+            None
+        }
+    }
+}
+
+/// Day words and their Indonesian forms. Numbers are checked by
+/// [`crate::llm::grounded`]; days are the other fact a translation can
+/// quietly get wrong ("closed Tuesday" → "open again Tuesday").
+const DAYS: [(&str, &str); 10] = [
+    ("today", "hari ini"),
+    ("tomorrow", "besok"),
+    ("monday", "senin"),
+    ("tuesday", "selasa"),
+    ("wednesday", "rabu"),
+    ("thursday", "kamis"),
+    ("friday", "jumat"),
+    ("saturday", "sabtu"),
+    ("sunday", "minggu"),
+    ("yesterday", "kemarin"),
+];
+
+/// Every day named in the English answer is named in the translation.
+pub fn days_kept(source: &str, translated: &str) -> bool {
+    let src = source.to_lowercase();
+    let out = translated.to_lowercase().replace('\'', "");
+    DAYS.iter()
+        .filter(|(en, _)| src.contains(en))
+        .all(|(_, id)| out.contains(id))
+}
+
+/// Reword a computed answer (and its button labels) into the merchant's
+/// language. Rejected — the English stays — if the result contains any
+/// number the original did not.
+pub async fn localise(
+    g: &Arc<crate::llm::Gemini>,
+    language: &str,
+    text: &str,
+    labels: &[String],
+) -> Option<(String, Vec<String>)> {
+    let tone = match language {
+        "Indonesia · formal" => "Indonesian, polite and formal (Anda)",
+        "Indonesia · santai" => "Indonesian, warm and casual like a helpful shop assistant (kamu)",
+        _ => return None,
+    };
+    let system = format!(
+        "Translate a café stock assistant's reply, and each of its button labels, into \
+         {tone}. Keep the meaning exactly: every number, unit, product name, day and rupiah \
+         amount as given, and which days are closed or open. Do not add, round or compute \
+         anything; do not add advice. Keep it as short as the original."
+    );
+    let schema = json!({
+        "type": "OBJECT",
+        "properties": {
+            "text": {"type": "STRING"},
+            "labels": {"type": "ARRAY", "items": {"type": "STRING"}}
+        },
+        "required": ["text", "labels"]
+    });
+    let prompt = json!({ "text": text, "labels": labels }).to_string();
+    #[derive(Deserialize)]
+    struct Out {
+        text: String,
+        labels: Vec<String>,
+    }
+    let out: Out = match g
+        .json(&system, vec![json!({ "text": prompt })], schema)
+        .await
+    {
+        Ok(o) => o,
+        Err(e) => {
+            tracing::warn!(error = %e, "gemini localise failed; keeping English");
+            return None;
+        }
+    };
+    let source = format!("{text} {}", labels.join(" "));
+    let candidate = format!("{} {}", out.text, out.labels.join(" "));
+    if out.labels.len() != labels.len() || !crate::llm::grounded(&candidate, &source) {
+        tracing::warn!("gemini localise changed a number or a label count; keeping English");
+        return None;
+    }
+    if !days_kept(&source, &candidate) {
+        tracing::warn!("gemini localise dropped or changed a day; keeping English");
+        return None;
+    }
+    Some((out.text, out.labels))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -412,6 +637,19 @@ mod tests {
         assert_eq!(closure_days("minggu depan libur 2 hari"), Some(2));
         assert_eq!(closure_days("tutup tiga hari"), Some(3));
         assert_eq!(closure_days("why 12?"), None);
+    }
+
+    #[test]
+    fn a_translation_must_keep_the_days() {
+        let en = "Closed tomorrow and Tuesday: the 4 kg lasts until Thursday.";
+        assert!(days_kept(
+            en,
+            "Tutup besok dan Selasa: 4 kg cukup sampai Kamis."
+        ));
+        assert!(!days_kept(
+            en,
+            "Buka lagi Selasa depan: 4 kg cukup sampai Kamis."
+        ));
     }
 
     #[test]

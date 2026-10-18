@@ -58,8 +58,16 @@ struct MessageBody {
     text: String,
 }
 
-/// The merchant writes; the assistant answers in the same request. Answers
-/// are computed, not generated, so there is nothing slow to stream.
+/// The merchant writes; the assistant answers in the same request:
+///
+/// 1. store the message;
+/// 2. understand it — Gemini when configured and the mode is not Frugal,
+///    keyword rules otherwise;
+/// 3. compute the answer from the engine;
+/// 4. reword it into the merchant's language if that is not English.
+///
+/// Model calls happen outside the state lock, and any failure falls back to
+/// the deterministic path.
 async fn message(
     State(state): State<AppState>,
     Json(body): Json<MessageBody>,
@@ -70,15 +78,65 @@ async fn message(
             "a message is 1 to 500 characters".into(),
         ));
     }
-    let thread = {
+    let topic = body.topic.as_str();
+    let (products, open, mode, language) = {
         let mut s = state.store.lock()?;
-        if agent::topic_title(&body.topic).is_none() {
+        if agent::topic_title(topic).is_none() {
             return Err(AppError::NotFound);
         }
-        answer::reply(&mut s, &state.action_keys, &body.topic, text)?;
-        agent::thread(&s, &body.topic, &state.vision.source()).ok_or(AppError::NotFound)?
+        answer::push_staff(&mut s, topic, text);
+        let products: Vec<String> = s.data.products.iter().map(|p| p.name.clone()).collect();
+        let open = s.threads.get(topic).and_then(|m| {
+            m.iter().rev().find_map(|x| match x {
+                crate::contract::Message::SuggestionCard { card, .. }
+                    if card.state == crate::contract::CardState::Open =>
+                {
+                    Some(card.title.clone())
+                }
+                _ => None,
+            })
+        });
+        (
+            products,
+            open,
+            s.settings.mode.clone(),
+            s.settings.language.clone(),
+        )
     };
-    state.store.touched(&body.topic);
+    state.store.touched(topic);
+
+    let llm = state.llm.as_ref().filter(|_| mode != "frugal");
+    let intent = match llm {
+        Some(g) => answer::llm_intent(g, text, &products, open.as_deref())
+            .await
+            .unwrap_or_else(|| answer::rules(text)),
+        None => answer::rules(text),
+    };
+    tracing::debug!(?intent, "understood");
+
+    let mut reply = {
+        let mut s = state.store.lock()?;
+        answer::answer_intent(&mut s, &state.action_keys, topic, &intent)?
+    };
+
+    if let (Some(g), crate::contract::Message::Text { text, actions, .. }) =
+        (state.llm.as_ref(), &mut reply)
+    {
+        let labels: Vec<String> = actions.iter().flatten().map(|a| a.label.clone()).collect();
+        if let Some((t, l)) = answer::localise(g, &language, text, &labels).await {
+            *text = t;
+            for (a, label) in actions.iter_mut().flatten().zip(l) {
+                a.label = label;
+            }
+        }
+    }
+
+    let thread = {
+        let mut s = state.store.lock()?;
+        s.push(topic, reply);
+        agent::thread(&s, topic, &state.vision.source()).ok_or(AppError::NotFound)?
+    };
+    state.store.touched(topic);
     Ok(Json(thread))
 }
 
@@ -103,9 +161,18 @@ async fn stream(
     )
 }
 
+fn ai_info(state: &AppState) -> views::AiInfo {
+    let (calls_today, daily_cap) = state.llm.as_ref().map_or((0, 0), |g| g.usage());
+    views::AiInfo {
+        model: state.llm.as_ref().map(|g| g.model.clone()),
+        calls_today,
+        daily_cap,
+    }
+}
+
 async fn settings(State(state): State<AppState>) -> Result<Json<AiSettings>, AppError> {
     let s = state.store.lock()?;
-    Ok(Json(views::settings(&s)))
+    Ok(Json(views::settings(&s, &ai_info(&state))))
 }
 
 async fn update_settings(
@@ -131,7 +198,7 @@ async fn update_settings(
         }
         s.settings.language = l;
     }
-    Ok(Json(views::settings(&s)))
+    Ok(Json(views::settings(&s, &ai_info(&state))))
 }
 
 #[derive(Deserialize)]

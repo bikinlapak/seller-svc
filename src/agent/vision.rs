@@ -5,18 +5,23 @@
 //!   the shop's at-risk lots. It does not look at the pixels — it exists so the
 //!   whole capture → confirm → destination flow runs without a cloud account,
 //!   and it says so in the thread's source line.
-//! - [`VisionEngine::Gemini`]: Gemini structured output, enabled by
-//!   `SELLER_SVC_GEMINI_API_KEY`. Written to the PRD's contract (§9 "vision
-//!   output") but **not exercised in tests** — no key in CI.
+//! - [`VisionEngine::Gemini`]: Gemini structured output through
+//!   [`crate::llm`] (Vertex AI or the Gemini API), to the PRD's contract (§9
+//!   "vision output"). Not exercised in CI — no credentials there; any
+//!   failure falls back to the stand-in so the photo is never lost.
 //!
 //! Either way the result is a *proposal*. [`ground`] then keeps only candidate
 //! ids the shop supplied (the model may not invent products), and anything
 //! below the threshold becomes a "which one is it?" question. Vision never
 //! writes; the merchant's tap does.
 
+use std::sync::Arc;
+
 use chrono::NaiveDate;
 use serde::Deserialize;
 use serde_json::json;
+
+use crate::llm::Gemini;
 
 use crate::engine::waste::{Condition, condition_for};
 use crate::store::{DetectedItem, State};
@@ -74,24 +79,20 @@ pub fn candidates(state: &State) -> Vec<Candidate> {
 
 pub enum VisionEngine {
     Stub,
-    Gemini(Gemini),
+    Gemini(Arc<Gemini>),
 }
 
 impl VisionEngine {
-    pub fn from_config(api_key: Option<&str>, model: &str) -> Self {
-        match api_key {
-            Some(k) if !k.is_empty() => VisionEngine::Gemini(Gemini {
-                http: reqwest::Client::new(),
-                key: k.to_owned(),
-                model: model.to_owned(),
-            }),
-            _ => VisionEngine::Stub,
+    pub fn new(llm: Option<Arc<Gemini>>) -> Self {
+        match llm {
+            Some(g) => VisionEngine::Gemini(g),
+            None => VisionEngine::Stub,
         }
     }
 
     pub fn source(&self) -> String {
         match self {
-            VisionEngine::Stub => "Vision stand-in (no Gemini key)".into(),
+            VisionEngine::Stub => "Vision stand-in (no Gemini configured)".into(),
             VisionEngine::Gemini(g) => format!("Gemini vision · {}", g.model),
         }
     }
@@ -105,7 +106,7 @@ impl VisionEngine {
     ) -> Vec<Detection> {
         match self {
             VisionEngine::Stub => stub(candidates, today),
-            VisionEngine::Gemini(g) => match g.analyze(photo, content_type, candidates).await {
+            VisionEngine::Gemini(g) => match gemini(g, photo, content_type, candidates).await {
                 Ok(d) => d,
                 Err(e) => {
                     // A failed call must not lose the photo: fall back to the
@@ -239,83 +240,108 @@ pub fn ground(
         .collect()
 }
 
-pub struct Gemini {
-    http: reqwest::Client,
-    key: String,
-    model: String,
+async fn gemini(
+    g: &Gemini,
+    photo: &[u8],
+    content_type: &str,
+    candidates: &[Candidate],
+) -> Result<Vec<Detection>, crate::llm::LlmError> {
+    let list: Vec<_> = candidates
+        .iter()
+        .map(|c| json!({ "id": c.product_id, "name": c.name, "unit": c.unit }))
+        .collect();
+    let system = "You read photos of a café's leftovers at closing time. Identify each distinct \
+        item, count it, and judge its condition. Match items ONLY to the candidate product ids \
+        you are given; never invent an id. If you are not sure which candidate an item is, set \
+        candidate_id to null, give a confidence below 0.7 and list up to 3 likely ids in \
+        top_candidates. box_2d is the item's bounding box as [ymin, xmin, ymax, xmax] \
+        normalised to 0-1000. Report nothing that is not visible.";
+    let prompt = format!(
+        "Candidate products (perishable, in stock at this shop): {}",
+        serde_json::Value::Array(list)
+    );
+    let schema = json!({
+        "type": "OBJECT",
+        "properties": { "items": { "type": "ARRAY", "items": {
+            "type": "OBJECT",
+            "properties": {
+                "label": {"type": "STRING"},
+                "count": {"type": "INTEGER"},
+                "unit": {"type": "STRING"},
+                "condition": {"type": "STRING", "enum": ["expired", "damaged", "spoiled", "production_leftover"]},
+                "confidence": {"type": "NUMBER"},
+                "box_2d": {"type": "ARRAY", "items": {"type": "INTEGER"}},
+                "candidate_id": {"type": "STRING", "nullable": true},
+                "top_candidates": {"type": "ARRAY", "items": {"type": "STRING"}}
+            },
+            "required": ["label", "count", "condition", "confidence", "box_2d"]
+        }}},
+        "required": ["items"]
+    });
+    #[derive(Deserialize)]
+    struct Out {
+        items: Vec<Raw>,
+    }
+    // Lenient on box length: a model that returns 3 numbers must not sink
+    // the whole response.
+    #[derive(Deserialize)]
+    struct Raw {
+        label: String,
+        count: i64,
+        #[serde(default)]
+        unit: String,
+        condition: String,
+        confidence: f64,
+        #[serde(default)]
+        box_2d: Vec<f32>,
+        candidate_id: Option<String>,
+        #[serde(default)]
+        top_candidates: Vec<String>,
+    }
+    let out: Out = g
+        .json(
+            system,
+            vec![
+                json!({ "text": prompt }),
+                json!({ "inlineData": { "mimeType": content_type, "data": base64(photo) } }),
+            ],
+            schema,
+        )
+        .await?;
+    Ok(out
+        .items
+        .into_iter()
+        .take(8)
+        .map(|r| {
+            let bbox = box_2d_to_percent(&r.box_2d);
+            Detection {
+                label: r.label,
+                count: r.count.clamp(0, 99),
+                unit: r.unit,
+                condition: r.condition,
+                confidence: r.confidence.clamp(0.0, 1.0),
+                bbox,
+                candidate_id: r.candidate_id,
+                top_candidates: r.top_candidates,
+            }
+        })
+        .collect())
 }
 
-impl Gemini {
-    async fn analyze(
-        &self,
-        photo: &[u8],
-        content_type: &str,
-        candidates: &[Candidate],
-    ) -> Result<Vec<Detection>, String> {
-        let list: Vec<_> = candidates
-            .iter()
-            .map(|c| json!({ "id": c.product_id, "name": c.name, "unit": c.unit }))
-            .collect();
-        let prompt = format!(
-            "You are reading a photo of a café's leftovers at closing. Identify each distinct item, count it, and judge its condition. \
-             You may only match items to these candidate products by id: {}. \
-             If unsure, set candidate_id to null and list up to 3 likely ids in top_candidates. \
-             bbox is [x, y, w, h] in percent of the image. Do not invent products.",
-            serde_json::Value::Array(list)
-        );
-        let schema = json!({
-            "type": "OBJECT",
-            "properties": { "items": { "type": "ARRAY", "items": {
-                "type": "OBJECT",
-                "properties": {
-                    "label": {"type": "STRING"},
-                    "count": {"type": "INTEGER"},
-                    "unit": {"type": "STRING"},
-                    "condition": {"type": "STRING", "enum": ["expired", "damaged", "spoiled", "production_leftover"]},
-                    "confidence": {"type": "NUMBER"},
-                    "bbox": {"type": "ARRAY", "items": {"type": "NUMBER"}},
-                    "candidate_id": {"type": "STRING", "nullable": true},
-                    "top_candidates": {"type": "ARRAY", "items": {"type": "STRING"}}
-                },
-                "required": ["label", "count", "condition", "confidence", "bbox"]
-            }}},
-            "required": ["items"]
-        });
-        let body = json!({
-            "contents": [{ "parts": [
-                { "text": prompt },
-                { "inline_data": { "mime_type": content_type, "data": base64(photo) } }
-            ]}],
-            "generationConfig": { "responseMimeType": "application/json", "responseSchema": schema }
-        });
-        let url = format!(
-            "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent",
-            self.model
-        );
-        let res: serde_json::Value = self
-            .http
-            .post(url)
-            .header("x-goog-api-key", &self.key)
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| e.to_string())?
-            .error_for_status()
-            .map_err(|e| e.to_string())?
-            .json()
-            .await
-            .map_err(|e| e.to_string())?;
-        let text = res["candidates"][0]["content"]["parts"][0]["text"]
-            .as_str()
-            .ok_or("no text in response")?;
-        #[derive(Deserialize)]
-        struct Out {
-            items: Vec<Detection>,
-        }
-        serde_json::from_str::<Out>(text)
-            .map(|o| o.items)
-            .map_err(|e| e.to_string())
+/// Gemini's native box, `[ymin, xmin, ymax, xmax]` on 0-1000, to the
+/// contract's `[x, y, w, h]` in percent. Anything malformed becomes a box
+/// covering the photo rather than a sliver in a corner.
+pub fn box_2d_to_percent(b: &[f32]) -> [f32; 4] {
+    let [ymin, xmin, ymax, xmax] = match b {
+        [a, b, c, d] => [*a, *b, *c, *d].map(|v| (v / 10.0).clamp(0.0, 100.0)),
+        _ => return [0.0, 0.0, 100.0, 100.0],
+    };
+    let (x0, x1) = (xmin.min(xmax), xmin.max(xmax));
+    let (y0, y1) = (ymin.min(ymax), ymin.max(ymax));
+    if x1 - x0 < 1.0 || y1 - y0 < 1.0 {
+        return [0.0, 0.0, 100.0, 100.0];
     }
+    [x0, y0, x1 - x0, y1 - y0]
 }
 
 /// Standard base64 with padding.
@@ -430,6 +456,20 @@ mod tests {
         assert_eq!(d[0].candidate_id.as_deref(), Some("old"));
         assert_eq!(d[0].condition, "expired");
         assert!(d.last().unwrap().confidence < CONFIDENCE_THRESHOLD);
+    }
+
+    #[test]
+    fn gemini_boxes_become_percent_boxes() {
+        // ymin 150, xmin 50, ymax 620, xmax 460 → x 5, y 15, w 41, h 47.
+        assert_eq!(
+            box_2d_to_percent(&[150.0, 50.0, 620.0, 460.0]),
+            [5.0, 15.0, 41.0, 47.0]
+        );
+        assert_eq!(box_2d_to_percent(&[1.0, 2.0]), [0.0, 0.0, 100.0, 100.0]);
+        assert_eq!(
+            box_2d_to_percent(&[500.0, 500.0, 500.0, 500.0]),
+            [0.0, 0.0, 100.0, 100.0]
+        );
     }
 
     #[test]

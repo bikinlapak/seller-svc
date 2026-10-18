@@ -47,6 +47,28 @@ resource "google_cloud_run_v2_service" "seller_svc" {
         value = ""
       }
 
+      # Gemini via Vertex AI as the runtime service account (see iam.tf).
+      # The flash-lite tier is served on the `global` location only.
+      env {
+        name  = "SELLER_SVC_VERTEX_PROJECT"
+        value = var.project_id
+      }
+
+      env {
+        name  = "SELLER_SVC_VERTEX_LOCATION"
+        value = "global"
+      }
+
+      env {
+        name  = "SELLER_SVC_GEMINI_MODEL"
+        value = var.gemini_model
+      }
+
+      env {
+        name  = "SELLER_SVC_GEMINI_DAILY_CAP"
+        value = tostring(var.gemini_daily_cap)
+      }
+
       env {
         name = "SELLER_SVC_ACTION_KEY"
         value_source {

@@ -53,6 +53,50 @@ pub struct Special {
     /// (product id, whole stock units used).
     pub uses: Vec<(String, i64)>,
     pub method: String,
+    /// (product id, stock units per portion), main at-risk item first.
+    pub lines: Vec<(String, f64)>,
+}
+
+/// Size a dish against stock: as many portions as use up the at-risk main
+/// ingredient, limited by every ingredient on hand and by what a day sells.
+/// The same arithmetic whether the dish came from the library or a model.
+pub fn evaluate(
+    name: &str,
+    lines: &[(String, f64)],
+    price: Idr,
+    method: &str,
+    available: &HashMap<String, i64>,
+    at_risk: &HashMap<String, i64>,
+) -> Option<Special> {
+    let (main, per_main) = lines.first()?;
+    let risk = *at_risk.get(main)?;
+    if risk <= 0 || lines.iter().any(|(_, per)| !per.is_finite() || *per <= 0.0) {
+        return None;
+    }
+    let wanted = (risk as f64 / per_main).floor() as i64;
+    let possible = lines
+        .iter()
+        .map(|(pid, per)| {
+            let have = *available.get(pid).unwrap_or(&0) as f64;
+            (have / per).floor() as i64
+        })
+        .min()?;
+    let portions = wanted.min(possible).min(MAX_PORTIONS);
+    if portions <= 0 {
+        return None;
+    }
+    Some(Special {
+        name: name.into(),
+        portions,
+        price,
+        expected_recovered: portions * price,
+        uses: lines
+            .iter()
+            .map(|(pid, per)| (pid.clone(), (per * portions as f64).ceil() as i64))
+            .collect(),
+        method: method.into(),
+        lines: lines.to_vec(),
+    })
 }
 
 /// `available`: usable stock per product. `at_risk`: units expected to go
@@ -65,43 +109,14 @@ pub fn propose(
     RECIPES
         .iter()
         .filter_map(|r| {
-            let (main, per_main) = r.lines[0];
-            let risk = *at_risk.get(main)?;
-            if risk <= 0 {
-                return None;
-            }
-            // Enough portions to use up the at-risk stock, capped by every
-            // ingredient on hand and by what one day can sell.
-            let wanted = (risk as f64 / per_main).floor() as i64;
-            let possible = r
+            let lines: Vec<(String, f64)> = r
                 .lines
                 .iter()
-                .map(|(pid, per)| {
-                    let have = *available.get(*pid).unwrap_or(&0) as f64;
-                    (have / per).floor() as i64
-                })
-                .min()?;
-            let portions = wanted.min(possible).min(MAX_PORTIONS);
-            if portions <= 0 {
-                return None;
-            }
-            let uses: Vec<(String, i64)> = r
-                .lines
-                .iter()
-                .map(|(pid, per)| ((*pid).to_owned(), (per * portions as f64).ceil() as i64))
+                .map(|(p, per)| ((*p).to_owned(), *per))
                 .collect();
-            let rescued_value = uses[0].1 * cost.get(main).copied().unwrap_or(0);
-            Some((
-                rescued_value,
-                Special {
-                    name: r.name.into(),
-                    portions,
-                    price: r.price,
-                    expected_recovered: portions * r.price,
-                    uses,
-                    method: r.method.into(),
-                },
-            ))
+            let s = evaluate(r.name, &lines, r.price, r.method, available, at_risk)?;
+            let rescued_value = s.uses[0].1 * cost.get(&s.uses[0].0).copied().unwrap_or(0);
+            Some((rescued_value, s))
         })
         .max_by_key(|(v, _)| *v)
         .map(|(_, s)| s)

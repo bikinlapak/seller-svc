@@ -24,7 +24,6 @@ use crate::AppError;
 use crate::agent::{self, note, sign};
 use crate::clock;
 use crate::contract::*;
-use crate::engine::special::RECIPES;
 use crate::engine::waste::{Condition, Destination, WasteRecord, allowed, diversion};
 use crate::fmt::{idr, qty};
 use crate::shop::{Category, Product};
@@ -408,19 +407,15 @@ fn apply_special(
     let SuggestionKind::Special(sp) = &s.kind else {
         return Err(AppError::TokenInvalid);
     };
-    let recipe = RECIPES
-        .iter()
-        .find(|r| r.name == sp.name)
-        .ok_or(AppError::NotFound)?;
 
     // TODO(worksh.io): createWorkOrder for the recipe; adjustStock per
     // component with reason dest:repurposed.
     let today = state.today;
     let mut used = Vec::new();
-    for (i, (pid, per)) in recipe.lines.iter().enumerate() {
+    for (i, (pid, per)) in sp.lines.iter().enumerate() {
         let need = (per * portions as f64).ceil() as i64;
         let taken = state.data.take(pid, None, need);
-        used.push(((*pid).to_owned(), taken));
+        used.push((pid.clone(), taken));
         // The at-risk item counts as rescued; the others are ordinary usage.
         if i == 0
             && let Some(p) = state.data.product(pid).cloned()
@@ -467,7 +462,7 @@ fn apply_special(
         colour: "#E9D3B4".into(),
         description: format!(
             "Today's special, {portions} portions from stock at risk. {}",
-            recipe.method
+            sp.method
         ),
     });
 

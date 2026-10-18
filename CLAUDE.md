@@ -36,9 +36,14 @@ cd deployment && docker compose up --build -d   # full local stack on :3000, see
 - `src/engine/`: the deterministic core — `forecast` (TimesFM stand-in),
   `reorder` (expiry cap, pack/MOQ), `expiry` (FEFO risk, cover), `waste`
   (destinations, legal filter, diversion), `special`. Pure and unit-tested.
-- `src/agent/`: turns engine output into cards (`morning_run`), grounded Q&A
-  (`answer`), wording (`explain`, Gemini stand-in), and `vision` (stand-in, or
-  Gemini with `SELLER_SVC_GEMINI_API_KEY`).
+- `src/agent/`: turns engine output into cards (`morning_run`), Q&A
+  (`answer`: understand → compute → localise), wording (`explain`), `vision`
+  and `idea` (Gemini's daily special, checked and sized by the engine).
+- `src/llm.rs`: the Gemini client — Vertex AI (no key: metadata server on
+  Cloud Run, ADC locally) or the Gemini API; daily call cap; `grounded` /
+  number guard. Every caller falls back to rules/templates/stand-ins on error.
+  Rule: the model understands, perceives and words; it never produces a
+  quantity or a price that is used without the engine's checks.
 - `src/executor.rs`: the only write path — validate, claim the token, apply,
   audit, emit the event.
 - `src/store.rs`: PasStok state (threads, suggestions, POs, waste ledger,

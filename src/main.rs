@@ -12,6 +12,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let addr = config.bind_addr;
     let state = AppState::new(config)?;
+    seller_svc::spawn_ai_refresh(&state);
     let listener = tokio::net::TcpListener::bind(addr).await?;
     tracing::info!(%addr, "seller-svc listening");
 

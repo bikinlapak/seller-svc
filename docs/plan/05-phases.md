@@ -34,8 +34,11 @@ complete.
 > to the in-memory ledger, each marked `TODO(worksh.io)` with its mutation);
 > **Postgres** (state resets on restart); **BigQuery / AI.FORECAST / Pub/Sub**
 > (the forecast is a weekday-seasonal model, the outbox is a Vec);
-> **Gemini** (explanations are templates; vision is a stub unless
-> `SELLER_SVC_GEMINI_API_KEY` is set — that path is written but untested);
+> **Gemini** is now real when configured (Vertex AI, `gemini-3.5-flash-lite`,
+> verified against the staging project): waste-photo vision grounded to the
+> catalog, question understanding, translation to Indonesian behind number
+> and day guards, and the daily special idea checked by the engine. Card
+> reasons are still English templates;
 > **GCS** for photos and receipts; push and WhatsApp templates (Phase 9);
 > auth/session (Phase 1). Boxes below stay unticked until the real service
 > behind them is wired.

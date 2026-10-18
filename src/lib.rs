@@ -15,6 +15,7 @@ pub mod engine;
 pub mod error;
 pub mod executor;
 pub mod fmt;
+pub mod llm;
 pub mod media;
 pub mod routes;
 pub mod shop;
@@ -45,6 +46,9 @@ pub struct AppState {
     /// PasStok state for the tenant.
     pub store: Arc<store::Store>,
     pub vision: Arc<agent::vision::VisionEngine>,
+    /// Gemini, when configured. Words and perception only; `None` = the
+    /// deterministic stand-ins everywhere.
+    pub llm: Option<Arc<llm::Gemini>>,
 }
 
 /// The demo tenant at the start of its day, with the morning run done.
@@ -84,9 +88,11 @@ impl AppState {
         };
 
         let state = demo_state(&action_keys)?;
-        let vision = agent::vision::VisionEngine::from_config(
-            config.gemini_api_key.as_deref(),
-            &config.gemini_model,
+        let llm = llm::Gemini::from_config(&config).map(Arc::new);
+        let vision = agent::vision::VisionEngine::new(llm.clone());
+        tracing::info!(
+            gemini = %llm.as_ref().map_or("off".into(), |g| g.label()),
+            "Gemini"
         );
         tracing::info!(vision = %vision.source(), "PasStok ready");
 
@@ -97,8 +103,23 @@ impl AppState {
             tokens: Arc::new(token::TokenGuard::new()),
             store: Arc::new(store::Store::new(state)),
             vision: Arc::new(vision),
+            llm,
         })
     }
+}
+
+/// Background model work after the morning run: today's special from
+/// Gemini. Fire-and-forget — the library idea is already on the card, and a
+/// failure just leaves it there.
+pub fn spawn_ai_refresh(state: &AppState) {
+    let Some(g) = state.llm.clone() else { return };
+    let store = state.store.clone();
+    let keys = state.action_keys.clone();
+    tokio::spawn(async move {
+        if let Err(e) = agent::idea::refresh_special(&store, &keys, &g).await {
+            tracing::warn!(error = %e, "special refresh failed");
+        }
+    });
 }
 
 pub fn build_router(state: AppState) -> Router {

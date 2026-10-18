@@ -12,6 +12,7 @@
 pub mod analysis;
 pub mod answer;
 pub mod explain;
+pub mod idea;
 pub mod vision;
 
 use std::collections::HashMap;

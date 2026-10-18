@@ -3,6 +3,7 @@
 # earlier only adds surface area without benefit.
 resource "google_project_service" "ini" {
   for_each = toset([
+    "aiplatform.googleapis.com",
     "artifactregistry.googleapis.com",
     "cloudresourcemanager.googleapis.com",
     "iam.googleapis.com",

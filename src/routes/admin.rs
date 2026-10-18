@@ -7,7 +7,7 @@ use axum::routing::post;
 use axum::{Json, Router};
 use serde_json::{Value, json};
 
-use crate::{AppError, AppState, agent, demo_state};
+use crate::{AppError, AppState, agent, demo_state, spawn_ai_refresh};
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -18,6 +18,7 @@ pub fn router() -> Router<AppState> {
 async fn reset(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
     let fresh = demo_state(&state.action_keys)?;
     state.store.replace(fresh)?;
+    spawn_ai_refresh(&state);
     Ok(Json(json!({ "reset": true })))
 }
 
@@ -27,5 +28,6 @@ async fn run(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
         agent::morning_run(&mut s, &state.action_keys)?;
     }
     state.store.touched("*");
+    spawn_ai_refresh(&state);
     Ok(Json(json!({ "ran": true })))
 }

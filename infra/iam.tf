@@ -14,8 +14,16 @@ resource "google_service_account" "seller_app" {
   depends_on   = [google_project_service.ini]
 }
 
+# seller-svc calls Gemini on Vertex AI as itself: no API key exists to leak.
+# aiplatform.user lets it call models; it grants no access to data.
+resource "google_project_iam_member" "svc_vertex" {
+  project = var.project_id
+  role    = "roles/aiplatform.user"
+  member  = google_service_account.seller_svc.member
+}
+
 # seller-svc reads the action-token signing key. That is all — no access to
-# any other secret, and no project-level roles.
+# any other secret.
 resource "google_secret_manager_secret_iam_member" "svc_read_action_key" {
   secret_id = google_secret_manager_secret.action_key.id
   role      = "roles/secretmanager.secretAccessor"

@@ -74,3 +74,15 @@ variable "max_instances" {
   type        = number
   default     = 4
 }
+
+variable "gemini_model" {
+  description = "Gemini model seller-svc uses on Vertex AI (cheap tier by default)."
+  type        = string
+  default     = "gemini-3.5-flash-lite"
+}
+
+variable "gemini_daily_cap" {
+  description = "Gemini calls per day before seller-svc falls back to rules and templates."
+  type        = number
+  default     = 2000
+}

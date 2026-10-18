@@ -14,9 +14,16 @@ pub struct Config {
     /// Ed25519 private key (PKCS#8 DER, base64) for action tokens. Empty =
     /// generate a throwaway key at start-up; development only.
     pub action_key_pkcs8: Option<Vec<u8>>,
-    /// Gemini API key for waste-photo vision. Empty = the local stand-in.
+    /// Gemini via Vertex AI in this project (no key: runtime identity or
+    /// ADC). Empty, with no API key either = deterministic stand-ins only.
+    pub vertex_project: Option<String>,
+    /// Vertex location. Flash-lite models are served on `global`.
+    pub vertex_location: String,
+    /// Gemini API key, for setups without GCP. Takes precedence over Vertex.
     pub gemini_api_key: Option<String>,
     pub gemini_model: String,
+    /// Model calls allowed per day before falling back to the stand-ins.
+    pub gemini_daily_cap: u32,
 }
 
 impl Config {
@@ -52,9 +59,19 @@ impl Config {
             _ => None,
         };
 
-        let gemini_api_key = get("SELLER_SVC_GEMINI_API_KEY").filter(|k| !k.trim().is_empty());
+        let nonempty = |k: &str| get(k).filter(|v| !v.trim().is_empty());
+        let gemini_api_key = nonempty("SELLER_SVC_GEMINI_API_KEY");
+        let vertex_project = nonempty("SELLER_SVC_VERTEX_PROJECT");
+        let vertex_location =
+            nonempty("SELLER_SVC_VERTEX_LOCATION").unwrap_or_else(|| "global".into());
         let gemini_model =
-            get("SELLER_SVC_GEMINI_MODEL").unwrap_or_else(|| "gemini-2.5-flash".into());
+            nonempty("SELLER_SVC_GEMINI_MODEL").unwrap_or_else(|| "gemini-3.5-flash-lite".into());
+        let gemini_daily_cap = match nonempty("SELLER_SVC_GEMINI_DAILY_CAP") {
+            Some(v) => v
+                .parse()
+                .map_err(|e| AppError::Config(format!("SELLER_SVC_GEMINI_DAILY_CAP: {e}")))?,
+            None => 2000,
+        };
 
         Ok(Self {
             bind_addr,
@@ -62,8 +79,11 @@ impl Config {
             works_graphql_url,
             cors_allowed_origins,
             action_key_pkcs8,
+            vertex_project,
+            vertex_location,
             gemini_api_key,
             gemini_model,
+            gemini_daily_cap,
         })
     }
 }
@@ -127,6 +147,14 @@ mod tests {
         let err =
             Config::from_lookup(|k| (k == "SELLER_SVC_ACTION_KEY").then(|| "not base64!".into()));
         assert!(matches!(err, Err(AppError::Config(_))));
+    }
+
+    #[test]
+    fn gemini_is_off_unless_configured() {
+        let cfg = Config::from_lookup(|_| None).unwrap();
+        assert!(cfg.vertex_project.is_none() && cfg.gemini_api_key.is_none());
+        assert_eq!(cfg.vertex_location, "global");
+        assert_eq!(cfg.gemini_model, "gemini-3.5-flash-lite");
     }
 
     #[test]

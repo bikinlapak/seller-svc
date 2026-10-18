@@ -616,7 +616,14 @@ pub fn dashboard(state: &State) -> Dashboard {
     }
 }
 
-pub fn settings(state: &State) -> AiSettings {
+/// What the AI settings screen reports about the model in use.
+pub struct AiInfo {
+    pub model: Option<String>,
+    pub calls_today: u32,
+    pub daily_cap: u32,
+}
+
+pub fn settings(state: &State, ai: &AiInfo) -> AiSettings {
     let mode = |id: &str, label: &str, note: &str| AssistantMode {
         id: id.into(),
         label: label.into(),
@@ -636,28 +643,45 @@ pub fn settings(state: &State) -> AiSettings {
             mode("thorough", "Thorough", "longer reasoning"),
         ],
         selected_mode: state.settings.mode.clone(),
-        models: vec![
-            model(
-                "Chat and explanations",
-                Some("templated from the engine's numbers in this build"),
-                if state.settings.mode == "thorough" {
-                    "Gemini Pro"
-                } else {
-                    "Gemini Flash"
-                },
-                false,
-            ),
-            model("Reading product and waste photos", None, "Gemini Pro", false),
-            model("Menu ideas and listings", None, "Gemini Flash", false),
-            // A system number: never invented by a chat model, and the
-            // merchant deserves to know which figures those are.
-            model(
-                "Stock forecasting",
-                Some("computed by the system, not by chat"),
-                "TimesFM",
-                true,
-            ),
-        ],
+        models: {
+            let gem = ai.model.as_deref();
+            let frugal = state.settings.mode == "frugal";
+            vec![
+                model(
+                    "Understanding questions",
+                    Some(if frugal || gem.is_none() {
+                        "keyword rules"
+                    } else {
+                        "answers are computed by the system"
+                    }),
+                    match gem {
+                        Some(m) if !frugal => m,
+                        _ => "Rules",
+                    },
+                    gem.is_none() || frugal,
+                ),
+                model(
+                    "Reading waste photos",
+                    gem.is_none().then_some("stand-in, no model configured"),
+                    gem.unwrap_or("Stand-in"),
+                    gem.is_none(),
+                ),
+                model(
+                    "Menu ideas",
+                    Some("portions and prices checked by the system"),
+                    gem.unwrap_or("Recipe library"),
+                    gem.is_none(),
+                ),
+                // A system number: never invented by a chat model, and the
+                // merchant deserves to know which figures those are.
+                model(
+                    "Stock forecasting",
+                    Some("computed by the system, not by chat"),
+                    "TimesFM",
+                    true,
+                ),
+            ]
+        },
         autonomy: vec![
             Autonomy {
                 id: "small-po".into(),
@@ -679,10 +703,22 @@ pub fn settings(state: &State) -> AiSettings {
                 .collect(),
             selected: state.settings.language.clone(),
         },
-        budget: Budget {
-            cap_label: "Rp150k/mo".into(),
-            used_percent: 25,
-            note: "25% used this month. If it runs out, the assistant drops to Frugal.".into(),
+        budget: match ai.model {
+            Some(_) => Budget {
+                cap_label: format!("{} calls/day", ai.daily_cap),
+                used_percent: (i64::from(ai.calls_today) * 100)
+                    .checked_div(i64::from(ai.daily_cap))
+                    .unwrap_or(0),
+                note: format!(
+                    "{} model calls today. At the cap the assistant falls back to rules and templates until tomorrow.",
+                    ai.calls_today
+                ),
+            },
+            None => Budget {
+                cap_label: "No model".into(),
+                used_percent: 0,
+                note: "No Gemini configured: everything runs on rules, templates and the stand-ins.".into(),
+            },
         },
         privacy: "Your shop's data is not used to train models. Waste photos are kept for 90 days as evidence."
             .into(),

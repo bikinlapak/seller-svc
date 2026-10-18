@@ -41,9 +41,17 @@ services:
       SELLER_SVC_CORS_ORIGINS: http://localhost:${APP_PORT:-3000}
       # See .env.example for what each of these does when empty.
       SELLER_SVC_ACTION_KEY: ${SELLER_SVC_ACTION_KEY:-}
+      SELLER_SVC_VERTEX_PROJECT: ${SELLER_SVC_VERTEX_PROJECT:-}
+      SELLER_SVC_VERTEX_LOCATION: ${SELLER_SVC_VERTEX_LOCATION:-global}
       SELLER_SVC_GEMINI_API_KEY: ${SELLER_SVC_GEMINI_API_KEY:-}
-      SELLER_SVC_GEMINI_MODEL: ${SELLER_SVC_GEMINI_MODEL:-gemini-2.5-flash}
+      SELLER_SVC_GEMINI_MODEL: ${SELLER_SVC_GEMINI_MODEL:-gemini-3.5-flash-lite}
+      SELLER_SVC_GEMINI_DAILY_CAP: ${SELLER_SVC_GEMINI_DAILY_CAP:-2000}
+      # Vertex locally: your `gcloud auth application-default login`
+      # credentials, mounted read-only. Unused when Vertex is off.
+      GOOGLE_APPLICATION_CREDENTIALS: /gcloud/application_default_credentials.json
       RUST_LOG: ${RUST_LOG:-seller_svc=debug,tower_http=info}
+    volumes:
+      - ${GCLOUD_CONFIG_DIR:-~/.config/gcloud}:/gcloud:ro
     ports:
       - "${SVC_PORT:-8080}:8080"
     healthcheck:
