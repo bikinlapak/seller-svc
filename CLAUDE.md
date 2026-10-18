@@ -19,6 +19,7 @@ cargo run                       # reads .env (optional), see .env.example
 cargo test                      # unit tests (config) + tests/http.rs (router via tower oneshot)
 cargo clippy --all-targets
 cargo fmt
+docker compose up --build -d   # full local stack: seller-svc + ../seller-app + edge proxy on :3000
 ```
 
 ## Layout
