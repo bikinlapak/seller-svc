@@ -54,9 +54,10 @@ seller services, applied per environment.
 
 Two Dockerfiles, mirroring the 2fa-gateway pattern:
 
-- `Dockerfile.base` — the fat image, built once per OS/library change, tagged
-  `v2`. It is the *runtime* base (`debian:bookworm-slim` + ca-certificates),
-  so a deploy never runs apt — the 2fa-gateway pattern.
+- `Dockerfile.base` — `bikinlapak-base`, the shared runtime base for bikinlapak
+  services (`debian:bookworm-slim` + ca-certificates), versioned (`v1.0`).
+  A deploy never runs apt; adding a runtime dependency means editing this
+  file and bumping the tag — the 2fa-gateway pattern.
 - `Dockerfile.app` — the thin image: Rust build in a pinned
   `rust:1.97-bookworm` stage, then the binary copied onto `BASE_IMAGE`.
   Tagged with the commit SHA.

@@ -1,6 +1,8 @@
 # Runtime base; the workflow/Makefile always passes the real value via
 # --build-arg BASE_IMAGE. Keep the default in sync with deploy.yml.
-ARG BASE_IMAGE=debian:bookworm-slim
+# bikinlapak-base is shared across services: need a new runtime dependency?
+# Add it to Dockerfile.base, bump the tag (v1.1, v2.0, ...), done.
+ARG BASE_IMAGE=asia-southeast2-docker.pkg.dev/project-9567c06f-f9aa-4397-a2c/bikinlapak-staging/bikinlapak-base:v1.0
 
 # ---- Stage 1: Rust build ----
 FROM rust:1.97-bookworm AS builder
