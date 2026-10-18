@@ -1,6 +1,6 @@
-# API yang dipakai sekarang. Pub/Sub, BigQuery, Memorystore dan Vertex AI
-# menyusul bersama layanan yang memakainya (Fase 4-7) — menyalakannya lebih
-# awal hanya menambah permukaan tanpa manfaat.
+# APIs in active use. Pub/Sub, BigQuery, Memorystore and Vertex AI arrive
+# together with the services that need them (Phases 4-7) — enabling them
+# earlier only adds surface area without benefit.
 resource "google_project_service" "ini" {
   for_each = toset([
     "artifactregistry.googleapis.com",
@@ -14,15 +14,15 @@ resource "google_project_service" "ini" {
 
   service = each.value
 
-  # Jangan matikan API saat `terraform destroy`: API dipakai bersama dan
-  # mematikannya bisa menjatuhkan hal lain di project yang sama.
+  # Do not disable APIs on `terraform destroy`: APIs are shared and
+  # disabling them can take down other things in the same project.
   disable_on_destroy = false
 }
 
 locals {
   suffix = var.env
 
-  # Placeholder supaya `apply` pertama berhasil sebelum ada image hasil build.
+  # Placeholder so the first `apply` succeeds before any built image exists.
   placeholder = "us-docker.pkg.dev/cloudrun/container/hello"
 
   seller_svc_image = coalesce(var.seller_svc_image, local.placeholder)

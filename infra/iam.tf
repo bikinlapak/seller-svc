@@ -1,6 +1,6 @@
-# Satu service account runtime per layanan. Pemisahannya yang membuat
-# pertanyaan "kode ini bisa menulis apa?" bisa dijawab dengan membaca IAM,
-# bukan membaca seluruh kode.
+# One runtime service account per service. This separation is what lets the
+# question "what can this code write?" be answered by reading IAM instead of
+# reading all the code.
 
 resource "google_service_account" "seller_svc" {
   account_id   = "seller-svc-${local.suffix}"
@@ -14,17 +14,16 @@ resource "google_service_account" "seller_app" {
   depends_on   = [google_project_service.ini]
 }
 
-# seller-svc membaca kunci penandatangan token aksi. Itu saja — tidak ada
-# akses ke secret lain, dan tidak ada peran setingkat project.
-resource "google_secret_manager_secret_iam_member" "svc_baca_kunci_aksi" {
+# seller-svc reads the action-token signing key. That is all — no access to
+# any other secret, and no project-level roles.
+resource "google_secret_manager_secret_iam_member" "svc_read_action_key" {
   secret_id = google_secret_manager_secret.action_key.id
   role      = "roles/secretmanager.secretAccessor"
   member    = google_service_account.seller_svc.member
 }
 
-# seller-app tidak memegang secret apa pun. Satu-satunya izinnya adalah
-# memanggil seller-svc.
-resource "google_cloud_run_v2_service_iam_member" "app_panggil_svc" {
+# seller-app holds no secrets. Its only permission is calling seller-svc.
+resource "google_cloud_run_v2_service_iam_member" "app_calls_svc" {
   project  = var.project_id
   location = google_cloud_run_v2_service.seller_svc.location
   name     = google_cloud_run_v2_service.seller_svc.name
@@ -32,10 +31,10 @@ resource "google_cloud_run_v2_service_iam_member" "app_panggil_svc" {
   member   = google_service_account.seller_app.member
 }
 
-# seller-app terbuka untuk umum — ini aplikasinya. seller-svc tidak:
-# tidak ada allUsers di mana pun, jadi /v1/actions tidak bisa dijangkau
-# langsung dari internet.
-resource "google_cloud_run_v2_service_iam_member" "app_publik" {
+# seller-app is public — it is the application. seller-svc is not:
+# there is no allUsers anywhere, so /v1/actions cannot be reached directly
+# from the internet.
+resource "google_cloud_run_v2_service_iam_member" "app_public" {
   project  = var.project_id
   location = google_cloud_run_v2_service.seller_app.location
   name     = google_cloud_run_v2_service.seller_app.name
@@ -43,7 +42,7 @@ resource "google_cloud_run_v2_service_iam_member" "app_publik" {
   member   = "allUsers"
 }
 
-/* ---------- Deployer: identitas yang dipakai GitHub Actions ---------- */
+/* ---------- Deployer: the identity GitHub Actions uses ---------- */
 
 resource "google_service_account" "deployer" {
   account_id   = "deployer-${local.suffix}"
@@ -53,8 +52,8 @@ resource "google_service_account" "deployer" {
 
 resource "google_project_iam_member" "deployer" {
   for_each = toset([
-    "roles/run.admin",               # deploy revisi baru
-    "roles/artifactregistry.writer", # dorong image
+    "roles/run.admin",               # deploy new revisions
+    "roles/artifactregistry.writer", # push images
   ])
 
   project = var.project_id
@@ -62,11 +61,11 @@ resource "google_project_iam_member" "deployer" {
   member  = google_service_account.deployer.member
 }
 
-# Deployer boleh men-deploy *sebagai* SA runtime, tapi tidak mewarisi izin
-# keduanya. Diberikan per service account, bukan setingkat project — tanpa ini
-# `roles/iam.serviceAccountUser` di level project akan membuat deployer bisa
-# meniru service account apa pun yang ada.
-resource "google_service_account_iam_member" "deployer_pakai_runtime" {
+# The deployer may deploy *as* a runtime SA, but inherits neither's
+# permissions. Granted per service account, not project-wide — without this,
+# a project-level `roles/iam.serviceAccountUser` would let the deployer
+# impersonate any service account in the project.
+resource "google_service_account_iam_member" "deployer_uses_runtime" {
   for_each = {
     svc = google_service_account.seller_svc.name
     app = google_service_account.seller_app.name

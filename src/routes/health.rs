@@ -11,7 +11,12 @@ pub struct Health {
 }
 
 pub fn router() -> Router<AppState> {
-    Router::new().route("/healthz", get(healthz))
+    Router::new()
+        .route("/healthz", get(healthz))
+        // Google's frontend intercepts the exact path /healthz on public
+        // *.run.app URLs, so /health is the externally probeable alias.
+        // Cloud Run's own probes use /healthz directly on the container.
+        .route("/health", get(healthz))
 }
 
 /// Liveness only: it does not touch works-server, so the orchestrator will not

@@ -1,77 +1,75 @@
-# infra — Terraform untuk PasStok
+# infra — Terraform for PasStok
 
-Satu root Terraform, satu project GCP per lingkungan. Mengurus **kedua**
-layanan: `seller-svc` (repo ini) dan `seller-app` (repo sebelah), karena
-keduanya satu sistem dan URL yang satu masuk ke env yang lain.
+One Terraform root, one GCP project per environment. It manages **both**
+services: `seller-svc` (this repo) and `seller-app` (the sibling repo),
+because they are one system and one's URL goes into the other's env.
 
-## Yang dibuat
+## What it creates
 
-| Berkas | Isi |
-| ------ | --- |
-| `main.tf` | API yang dinyalakan, nilai turunan |
-| `registry.tf` | Artifact Registry Docker + aturan pembersihan |
-| `iam.tf` | Service account runtime per layanan, deployer, binding |
-| `secrets.tf` | Wadah kunci penandatangan token aksi |
-| `run.tf` | Dua layanan Cloud Run |
-| `github.tf` | Workload Identity Federation (modul `gh-oidc`) |
+| File | Contents |
+| ---- | -------- |
+| `main.tf` | Enabled APIs, derived values |
+| `registry.tf` | Artifact Registry Docker repo + cleanup policies |
+| `iam.tf` | Runtime service account per service, deployer, bindings |
+| `secrets.tf` | Container for the action-token signing key |
+| `run.tf` | The two Cloud Run services |
+| `github.tf` | Workload Identity Federation (`gh-oidc` module) |
 
-## Bentuk keamanannya
+## The security shape
 
-Tiga hal yang sengaja dipilih, dan akan terasa salah kalau diubah tanpa sebab:
+Three deliberate choices that will feel wrong if changed without cause:
 
-**`seller-svc` tidak publik.** Tidak ada `allUsers` di mana pun untuknya; satu
--satunya yang memegang `roles/run.invoker` adalah service account runtime
-`seller-app`. `POST /v1/actions/{token}` adalah jalur tulis ke worksh.io —
-tidak boleh bisa dijangkau dari internet meski tokennya sudah diverifikasi.
-Konsekuensinya ada di kode: `seller-app` mengambil ID token dari metadata
-server (`SELLER_SVC_AUDIENCE`) dan mengirimnya sebagai bearer. Di lokal
-variabel itu kosong dan seluruh jalur dilewati.
+**`seller-svc` is not public.** There is no `allUsers` for it anywhere; the
+only holder of `roles/run.invoker` is the `seller-app` runtime service
+account. `POST /v1/actions/{token}` is a write path to worksh.io — it must
+not be reachable from the internet even with a verified token. The
+consequence lives in the code: `seller-app` fetches an ID token from the
+metadata server (`SELLER_SVC_AUDIENCE`) and sends it as a bearer. Locally
+that variable is empty and the whole path is skipped.
 
-**Tidak ada kunci service account.** GitHub Actions menukar OIDC token-nya
-lewat WIF. Tidak ada JSON key yang dibuat, disimpan di secret repo, atau bisa
-bocor lewat log.
+**No service-account keys.** GitHub Actions exchanges its OIDC token
+through WIF. No JSON key is created, stored in a repo secret, or leakable
+through logs.
 
-**`attribute_condition` adalah pagarnya, bukan `sa_mapping`.** Issuer GitHub
-melayani seluruh dunia. Tanpa
+**`attribute_condition` is the fence, not `sa_mapping`.** GitHub's issuer
+serves the entire world. Without
 
 ```hcl
 attribute_condition = "assertion.repository_owner == 'bikinlapak'"
 ```
 
-workflow di repo **mana pun di GitHub** bisa menukar tokennya dengan
-kredensial deployer kita. `sa_mapping` sudah mempersempit per repo, tapi
-syarat di atas ditegakkan lebih dulu di tingkat provider, jadi salah ketik di
-`sa_mapping` tidak langsung membuka pintu. Jangan hapus baris itu.
+a workflow in **any repo on GitHub** could exchange its token for our
+deployer credentials. `sa_mapping` already narrows per repo, but the
+condition above is enforced first, at the provider level, so a typo in
+`sa_mapping` does not immediately open the door. Do not remove that line.
 
-## Runner: kenapa submodulnya tidak dipakai
+## Runner
 
-Modul yang dirujuk,
+The referenced module,
 [`terraform-google-modules/github-actions-runners`](https://github.com/terraform-google-modules/terraform-google-github-actions-runners),
-berisi empat submodul: tiga untuk **self-hosted runner** (GKE, MIG VM, MIG
-container VM) dan satu untuk **WIF** (`gh-oidc`).
+contains four submodules: three for **self-hosted runners** (GKE, MIG VM,
+MIG container VM) and one for **WIF** (`gh-oidc`). Only `gh-oidc` is used
+here.
 
-Yang dipakai di sini hanya `gh-oidc`. Runner-nya tidak, karena:
+The runner is self-hosted, but **not via the submodule**: the
+`github-runner` VM (e2-medium, Debian) was created and registered manually
+to the repo on GitHub. Docker on that VM keeps its data-root and swap on a
+second disk (`/mnt/storage/workspace`), so toolchain images and BuildKit
+cache never fill the system disk. The deploy workflow (`deploy.yml`) runs
+there; light CI (`ci.yml`) stays on GitHub-hosted runners.
 
-- runner bawaan GitHub gratis untuk repo publik dan murah untuk privat, pada
-  dua repo sekecil ini;
-- self-hosted runner adalah mesin yang harus ditambal, dipantau dan dibayar
-  saat menganggur — infrastruktur baru untuk masalah yang belum ada;
-- alasan kuat memakainya biasanya akses ke jaringan privat, dan CI di sini
-  tidak membutuhkannya: tes unit tidak keluar jaringan, dan tes integrasi
-  menuju worksh.io staging lewat internet.
+Why still no runner submodule: a single VM needs no auto-scaling/MIG, and
+nothing about it needs Terraform management yet. Once runners multiply or
+must be hardened automatically, move to `gh-runner-mig-container-vm` from
+the same module.
 
-**Kapan ini berubah:** begitu CI perlu menyentuh Memorystore, Cloud SQL
-privat, atau works-server yang hanya ada di dalam VPC (Fase 6 ke atas).
-Saat itu tambahkan `gh-runner-mig-container-vm` dari modul yang sama —
-submodulnya sudah dipilih, tinggal dipasang.
+## First run
 
-## Jalan pertama kali
-
-Terraform tidak bisa membuat tempat penyimpanan state-nya sendiri, jadi dua
-langkah pertama manual.
+Terraform cannot create its own state storage, so the first two steps are
+manual.
 
 ```sh
-# 1. Project + bucket state (sekali per lingkungan)
+# 1. Project + state bucket (once per environment)
 gcloud projects create passtok-staging
 gcloud billing projects link passtok-staging --billing-account=<ID>
 gcloud storage buckets create gs://passtok-staging-tfstate \
@@ -79,51 +77,59 @@ gcloud storage buckets create gs://passtok-staging-tfstate \
   --uniform-bucket-level-access
 gcloud storage buckets update gs://passtok-staging-tfstate --versioning
 
-# 2. Isi nilai lingkungan
+# 2. Fill in the environment values
 cp envs/staging.tfvars.example envs/staging.tfvars
 cp envs/staging.gcs.tfbackend.example envs/staging.gcs.tfbackend
 $EDITOR envs/staging.tfvars
 
-# 3. Apply. Layanan berdiri dengan image placeholder Cloud Run.
+# 3. Apply. Services come up with the Cloud Run placeholder image.
 terraform init -backend-config=envs/staging.gcs.tfbackend
 terraform plan  -var-file=envs/staging.tfvars
 terraform apply -var-file=envs/staging.tfvars
 
-# 4. Isi kunci penandatangan. Materi kunci tidak pernah masuk Terraform.
+# 4. Fill the signing key. IMPORTANT: base64 — Cloud Run rejects binary env
+#    vars, and config.rs decodes base64 itself. Key material never enters
+#    Terraform.
 openssl genpkey -algorithm ed25519 -outform DER \
+  | base64 \
   | gcloud secrets versions add seller-svc-action-key-staging --data-file=-
 
-# 5. Set variables di kedua repo GitHub; `terraform output langkah_berikutnya`
-#    mencetak nilainya siap salin.
+# 5. Set variables in both GitHub repos; `terraform output next_steps`
+#    prints the values ready to paste.
 ```
 
-Setelah itu push ke `main` di salah satu repo: workflow `deploy.yml` membangun
-image dan mengganti placeholder.
+After that, push to `main` in either repo: the `deploy.yml` workflow builds
+the image and replaces the placeholder.
 
-## Hal yang menggigit
+## Things that bite
 
-**Image tidak dikelola Terraform.** `run.tf` memasang `ignore_changes` pada
-`template[0].containers[0].image`. GitHub Actions yang memegang image;
-tanpa itu, tiap `terraform apply` akan mengembalikan layanan ke image lama.
+**Images are not managed by Terraform.** `run.tf` sets `ignore_changes` on
+`template[0].containers[0].image`. GitHub Actions owns the image; without
+this, every `terraform apply` would roll the service back to the old
+tfvars image.
 
-**`PROTOCOL_HEADER` dan `HOST_HEADER` wajib di `seller-app`.** `adapter-node`
-di SvelteKit 3 tidak lagi membaca `ORIGIN` dan menganggap protokolnya `https`
-kalau tidak diberi tahu. Di belakang proxy Cloud Run, tanpa dua env itu setiap
-POST form ditolak `403 Cross-site POST form submissions are forbidden` —
-artinya semua tombol *Setujui* mati. Tidak terlihat sama sekali di
-`npm run dev`, karena pemeriksaan CSRF dilewati di mode dev.
+**`PROTOCOL_HEADER` and `HOST_HEADER` are mandatory for `seller-app`.**
+SvelteKit 3's `adapter-node` no longer reads `ORIGIN` and assumes https
+when not told otherwise. Behind the Cloud Run proxy, without those two env
+vars every form POST is rejected with `403 Cross-site POST form
+submissions are forbidden` — meaning every *Approve* button dies,
+invisible in `npm run dev` because CSRF checks are skipped in dev mode.
 
-**Kunci aksi diganti = token beredar hangus.** Penjual yang sedang menatap
-kartu saran harus memuat ulang. Itu memang benar, tapi jangan lakukan di
-tengah demo.
+**`PORT` is reserved.** Cloud Run injects `PORT` itself; setting it in the
+template is rejected with a 400. The container port must simply match what
+the app listens on (8080).
 
-**Belum ada di sini:** Pub/Sub, BigQuery, Memorystore, Vertex AI, Cloud
-Scheduler, dan job extractor. Semuanya menyusul bersama layanan yang
-memakainya (Fase 4–7 di `../docs/plan/05-phases.md`). Menyalakan API dan
-membuat resource sebelum ada yang memakainya hanya menambah biaya dan
-permukaan serang.
+**Replacing the action key invalidates live tokens.** A merchant staring
+at a suggestion card must reload. That is correct, but do not do it in the
+middle of a demo.
 
-## Perintah harian
+**Not here yet:** Pub/Sub, BigQuery, Memorystore, Vertex AI, Cloud
+Scheduler, and the extractor job. They arrive together with the services
+that use them (Phases 4–7 in `../docs/plan/05-phases.md`). Enabling APIs
+and creating resources before anything uses them only adds cost and attack
+surface.
+
+## Daily commands
 
 ```sh
 terraform fmt -recursive
@@ -131,5 +137,5 @@ terraform validate
 terraform plan -var-file=envs/staging.tfvars
 ```
 
-CI menjalankan `fmt -check`, `init -backend=false` dan `validate` pada setiap
-PR ke repo ini.
+CI runs `fmt -check`, `init -backend=false` and `validate` on every PR to
+this repo.

@@ -1,26 +1,35 @@
 name: Deploy
 
+# Test stage: triggered from branch feature/test_deployment (this repo is
+# currently read-only for the agent; it will be pushed once write access is
+# granted). After E2E is proven, switch the trigger to [main, master].
 on:
   push:
-    branches: [main]
+    branches: [feature/test_deployment]
   workflow_dispatch:
 
-# Tidak ada kunci service account di mana pun: `id-token: write` yang
-# membuat GitHub menerbitkan OIDC token, lalu ditukar ke GCP lewat Workload
-# Identity Federation (infra/github.tf di seller-svc).
+# No service-account keys anywhere: `id-token: write` makes GitHub mint an
+# OIDC token, exchanged at GCP through Workload Identity Federation
+# (infra/github.tf).
 permissions:
   contents: read
   id-token: write
 
-# Satu deploy berjalan pada satu waktu; yang antre dibatalkan supaya revisi
-# lama tidak menyusul revisi baru.
+# One deploy at a time; queued runs are cancelled so an old revision never
+# overtakes a new one.
 concurrency:
   group: deploy-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # Shared runtime base for bikinlapak services: built once, reused by every
+  # deploy. Need a new dependency? Add it to Dockerfile.base and bump the
+  # tag here (v1.1, v2.0, ...).
+  BASE_IMAGE: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.AR_REPO }}/bikinlapak-base:v1.0
+
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted]
     environment: staging
     steps:
       - uses: actions/checkout@v4
@@ -33,18 +42,28 @@ jobs:
 
       - uses: google-github-actions/setup-gcloud@v2
 
-      - name: Izinkan docker push ke Artifact Registry
+      - name: Authorize docker push to Artifact Registry
         run: gcloud auth configure-docker ${{ vars.GCP_REGION }}-docker.pkg.dev --quiet
+
+      - name: Verify or build base image
+        run: |
+          if docker pull "${BASE_IMAGE}" 2>/dev/null; then
+            echo "==> Base image found in registry: ${BASE_IMAGE}"
+          else
+            echo "==> Base image not found. Building from Dockerfile.base ..."
+            docker build -f Dockerfile.base -t "${BASE_IMAGE}" .
+            docker push "${BASE_IMAGE}"
+          fi
 
       - name: Build & push
         id: build
         run: |
           IMAGE="${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.AR_REPO }}/seller-svc:${{ github.sha }}"
-          docker build -t "$IMAGE" .
+          docker build -f Dockerfile.app --build-arg BASE_IMAGE="${BASE_IMAGE}" -t "$IMAGE" .
           docker push "$IMAGE"
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
 
-      - name: Deploy ke Cloud Run
+      - name: Deploy to Cloud Run
         run: |
           gcloud run deploy seller-svc-${{ vars.ENV_NAME }} \
             --image="${{ steps.build.outputs.image }}" \
@@ -52,7 +71,7 @@ jobs:
             --project="${{ vars.GCP_PROJECT_ID }}" \
             --quiet
 
-      - name: Tunggu revisi sehat
+      - name: Wait for a healthy revision
         run: |
           URL=$(gcloud run services describe seller-svc-${{ vars.ENV_NAME }} \
             --region="${{ vars.GCP_REGION }}" --project="${{ vars.GCP_PROJECT_ID }}" \
