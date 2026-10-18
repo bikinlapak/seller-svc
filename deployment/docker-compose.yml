@@ -14,8 +14,26 @@
 name: bikinlapak
 
 services:
+  # The shared runtime base (../Dockerfile.base), built locally so the stack
+  # never needs Artifact Registry access. It only exists to be built: the
+  # container runs `true` and exits.
+  base:
+    build:
+      context: ..
+      dockerfile: Dockerfile.base
+    image: bikinlapak-base:local
+    command: ["true"]
+    restart: "no"
+
   seller-svc:
-    build: ..
+    # Same thin app image as Cloud Run (../Dockerfile.app), FROM the local base.
+    build:
+      context: ..
+      dockerfile: Dockerfile.app
+      args:
+        BASE_IMAGE: bikinlapak-base
+      additional_contexts:
+        bikinlapak-base: service:base
     environment:
       SELLER_SVC_BIND_ADDR: 0.0.0.0:8080
       SELLER_SVC_LOG_JSON: "false"
