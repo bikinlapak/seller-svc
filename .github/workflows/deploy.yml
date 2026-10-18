@@ -22,9 +22,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Fat toolchain image: built once, reused by every deploy. Bump the tag
-  # only on toolchain upgrades.
-  BASE_IMAGE: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.AR_REPO }}/seller-svc-base:v1
+  # Fat runtime image: built once, reused by every deploy. Bump the tag only
+  # on OS/library changes (v2 = runtime deps moved here from Dockerfile.app).
+  BASE_IMAGE: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.AR_REPO }}/seller-svc-base:v2
 
 jobs:
   deploy:

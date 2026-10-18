@@ -54,11 +54,12 @@ seller services, applied per environment.
 
 Two Dockerfiles, mirroring the 2fa-gateway pattern:
 
-- `Dockerfile.base` — the fat image, built once per toolchain upgrade, tagged
-  `v1`. For seller-svc it is the Rust toolchain (`rust:1.97-bookworm`); deploys
-  never touch Docker Hub again.
-- `Dockerfile.app` — the thin image: build inside `BASE_IMAGE`, copy the
-  binary onto `debian:bookworm-slim`. Tagged with the commit SHA.
+- `Dockerfile.base` — the fat image, built once per OS/library change, tagged
+  `v2`. It is the *runtime* base (`debian:bookworm-slim` + ca-certificates),
+  so a deploy never runs apt — the 2fa-gateway pattern.
+- `Dockerfile.app` — the thin image: Rust build in a pinned
+  `rust:1.97-bookworm` stage, then the binary copied onto `BASE_IMAGE`.
+  Tagged with the commit SHA.
 
 ### Workflow strategy
 

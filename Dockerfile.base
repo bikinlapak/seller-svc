@@ -1,5 +1,8 @@
-# Fat toolchain base image, built once and pushed to Artifact Registry.
-# App images build FROM it (Dockerfile.app), so a deploy never depends on
-# Docker Hub being reachable or inside its rate limit. Rebuild only on
-# toolchain upgrades, then bump the tag (BASE_IMAGE in deploy.yml).
-FROM rust:1.97-bookworm
+# Runtime base image, built once and pushed to Artifact Registry.
+# App images FROM it, so a deploy never runs apt again. Rebuild only on
+# OS/library changes, then bump the tag (BASE_IMAGE in deploy.yml / Makefile).
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
