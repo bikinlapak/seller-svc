@@ -465,6 +465,7 @@ fn apply_special(
         weight_gram: 150,
         draft: false,
         colour: "#E9D3B4".into(),
+        photo_url: None,
         description: format!(
             "Today's special, {portions} portions from stock at risk. {}",
             sp.method

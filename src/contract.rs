@@ -399,6 +399,7 @@ pub struct Product {
     pub status: String,
     pub status_important: bool,
     pub photo_colour: String,
+    pub photo_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

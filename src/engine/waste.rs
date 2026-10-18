@@ -241,6 +241,7 @@ mod tests {
             weight_gram: 240,
             draft: false,
             colour: String::new(),
+            photo_url: None,
             description: String::new(),
         }
     }

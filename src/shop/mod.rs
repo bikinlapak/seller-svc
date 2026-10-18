@@ -59,8 +59,10 @@ pub struct Product {
     /// Weight of one stock unit, for waste in kg (worksh.io `weightGram`).
     pub weight_gram: i64,
     pub draft: bool,
-    /// Placeholder tile colour until real product photos exist.
+    /// Tile colour behind the photo, and the whole tile when there is none.
     pub colour: String,
+    /// Product photo; worksh.io `images[0]` in production.
+    pub photo_url: Option<String>,
     pub description: String,
 }
 

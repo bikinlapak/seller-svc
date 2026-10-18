@@ -102,6 +102,7 @@ fn product_row(state: &State, p: &ShopProduct, a: Option<&Analysis>) -> Product 
         status,
         status_important,
         photo_colour: p.colour.clone(),
+        photo_url: p.photo_url.clone(),
     }
 }
 

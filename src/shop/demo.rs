@@ -35,6 +35,33 @@ impl Rng {
     }
 }
 
+/// Unsplash photo ids per product, served from the Unsplash CDN at tile size.
+/// The daily special (made at runtime) has none and keeps its colour tile.
+const PHOTOS: &[(&str, &str)] = &[
+    ("p1", "1691480162735-9b91238080f6"),
+    ("p2", "1626079450697-400437370a89"),
+    ("p3", "1630182266697-92508c01e2d1"),
+    ("p4", "1597388778288-8ae51973e2a3"),
+    ("p5", "1774569036877-ab5a9cca2757"),
+    ("p6", "1728670212431-ac192413f4b1"),
+    ("p7", "1581268497089-7a975fb491a3"),
+    ("p8", "1589985270826-4b7bb135bc9d"),
+    ("p9", "1523473827533-2a64d0d36748"),
+    ("p10", "1502630039397-c104a63cc224"),
+    ("p11", "1781243680806-51150561d833"),
+    ("p12", "1586400928533-da0dbdca07fb"),
+    ("p13", "1757670919588-1fe3b3df3dfa"),
+    ("p14", "1584799580661-53b7c6b99430"),
+    ("p15", "1590080876209-c70d0f0bf6a3"),
+    ("p16", "1731406169646-9661105c5d85"),
+];
+
+fn photo_url(id: &str) -> Option<String> {
+    PHOTOS.iter().find(|(p, _)| *p == id).map(|(_, photo)| {
+        format!("https://images.unsplash.com/photo-{photo}?w=240&h=240&fit=crop&auto=format&q=70")
+    })
+}
+
 struct Spec {
     id: &'static str,
     name: &'static str,
@@ -398,6 +425,7 @@ pub fn build(today: NaiveDate) -> ShopData {
             weight_gram: s.weight_gram,
             draft: s.id == "p16",
             colour: s.colour.into(),
+            photo_url: photo_url(s.id),
             description: s.description.into(),
         })
         .collect();
