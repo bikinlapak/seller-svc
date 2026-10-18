@@ -15,8 +15,9 @@ use crate::contract::Idr;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Category {
+    Bread,
+    Pastries,
     Drinks,
-    Bakery,
     Ingredients,
     Supplies,
     Specials,
@@ -25,8 +26,9 @@ pub enum Category {
 impl Category {
     pub fn label(self) -> &'static str {
         match self {
+            Category::Bread => "Bread",
+            Category::Pastries => "Pastries",
             Category::Drinks => "Drinks",
-            Category::Bakery => "Bakery",
             Category::Ingredients => "Ingredients",
             Category::Supplies => "Supplies",
             Category::Specials => "Specials",

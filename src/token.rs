@@ -206,7 +206,7 @@ impl TokenGuard {
 mod tests {
     use super::*;
 
-    const TENANT: &str = "jasa-coffee-shop";
+    const TENANT: &str = "hangat-bakery";
 
     fn keys() -> ActionKeys {
         ActionKeys::ephemeral().unwrap()

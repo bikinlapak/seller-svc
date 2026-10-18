@@ -24,8 +24,8 @@ pub fn run_out_label(a: &Analysis, state: &State) -> String {
     format!("out by {}", relative_day(day, state.today))
 }
 
-/// "4 kg on hand, selling 1.6 kg a day, out by Thursday. Sumber Kopi delivers
-/// in 2 days, arriving Wednesday."
+/// "40 kg on hand, using 22 kg a day, out by Tuesday. Tepung Jaya delivers
+/// in 2 days, arriving Tuesday."
 pub fn reorder_line(a: &Analysis, p: &Product, s: &Supplier, state: &State) -> String {
     let rate = a.forecast.daily_rate();
     let mut out = format!(
@@ -118,8 +118,8 @@ pub fn why_reorder(a: &Analysis, p: &Product, s: &Supplier) -> String {
     out
 }
 
-/// "14 boxes expire tomorrow; about 6 will sell at full price. 30% off from
-/// 17.00 should recover ~Rp235k; bundling with a latte ~Rp168k."
+/// "50 pcs expire tomorrow; about 42 will sell at full price. 30% off from
+/// 17.00 recovers ~Rp71k; the buy-2-get-1 bundle ~Rp48k."
 pub fn expiry_reason(p: &Product, r: &LotRisk, actions: &[RiskAction], state: &State) -> String {
     let mut out = format!(
         "{} expire {}; about {} will sell at full price.",

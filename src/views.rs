@@ -119,8 +119,9 @@ pub fn product_list(state: &State) -> ProductList {
     let mut categories = vec!["All".to_string()];
     for c in [
         Category::Specials,
+        Category::Bread,
+        Category::Pastries,
         Category::Drinks,
-        Category::Bakery,
         Category::Ingredients,
         Category::Supplies,
     ] {

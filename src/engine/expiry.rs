@@ -123,7 +123,8 @@ pub struct RiskAction {
 const MARKDOWN_SELL_THROUGH: f64 = 0.7;
 const MARKDOWN_PCT: i64 = 30;
 const BUNDLE_SELL_THROUGH: f64 = 0.5;
-const BUNDLE_DISCOUNT: f64 = 0.2;
+/// Buy two, get one free: a third off each item that goes.
+const BUNDLE_DISCOUNT: f64 = 1.0 / 3.0;
 
 /// Ranked by rupiah recovered, highest first. Only products that are sold
 /// on their own get markdown and bundle; past-date stock gets nothing that
@@ -156,7 +157,7 @@ pub fn actions(
                     .round() as Idr;
             out.push(RiskAction {
                 kind: ActionKind::Bundle,
-                label: "Bundle with a latte".into(),
+                label: "Bundle: buy 2, get 1 free".into(),
                 expected_recovered: bundle,
             });
         } else {

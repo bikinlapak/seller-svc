@@ -94,8 +94,8 @@ impl Svc {
             .clone()
     }
 
-    async fn arabica_token(&self) -> String {
-        self.card("reorder", "Arabica").await["card"]["token"]
+    async fn flour_token(&self) -> String {
+        self.card("reorder", "Bread Flour").await["card"]["token"]
             .as_str()
             .unwrap()
             .to_owned()
@@ -126,13 +126,13 @@ async fn home_is_computed_and_every_link_has_a_thread() {
     let svc = Svc::new();
     let (status, json) = svc.get("/v1/home").await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(json["shop"]["name"], "Jasa Coffee Shop");
+    assert_eq!(json["shop"]["name"], "Hangat Bakery");
     let attention = json["attention"].as_array().unwrap();
     assert!(
         attention.iter().any(|a| a["title"]
             .as_str()
             .unwrap()
-            .starts_with("Arabica Beans 1 kg runs out")),
+            .starts_with("Bread Flour runs out")),
         "{attention:?}"
     );
     assert!(attention.iter().any(|a| a["icon"] == "expiry"));
@@ -158,23 +158,23 @@ async fn an_unknown_thread_is_404_and_a_missing_topic_400() {
 #[tokio::test]
 async fn reorder_cards_are_signed_and_grouped_by_supplier() {
     let svc = Svc::new();
-    let arabica = svc.card("reorder", "Arabica").await;
-    assert_eq!(arabica["author"], "agent");
-    assert_eq!(arabica["card"]["state"], "open");
-    assert_eq!(arabica["card"]["unit"], "kg");
-    let q = arabica["card"]["quantity"].as_i64().unwrap();
-    assert!((10..=15).contains(&q), "{q}");
-    let token = arabica["card"]["token"].as_str().unwrap();
+    let flour = svc.card("reorder", "Bread Flour").await;
+    assert_eq!(flour["author"], "agent");
+    assert_eq!(flour["card"]["state"], "open");
+    assert_eq!(flour["card"]["unit"], "kg");
+    let q = flour["card"]["quantity"].as_i64().unwrap();
+    assert!(q >= 100 && q % 25 == 0, "whole 25 kg sacks: {q}");
+    let token = flour["card"]["token"].as_str().unwrap();
     assert_eq!(token.split('.').count(), 3, "not a JWT: {token}");
 
-    let milk = svc.card("reorder", "Susu Nusantara").await;
+    let milk = svc.card("reorder", "Dairy Prima").await;
     assert_eq!(milk["card"]["lines"].as_array().unwrap().len(), 2);
 }
 
 #[tokio::test]
 async fn approving_a_reduced_quantity_creates_a_po_and_updates_everything() {
     let svc = Svc::new();
-    let token = svc.arabica_token().await;
+    let token = svc.flour_token().await;
     let (status, json) = svc
         .post(&format!("/v1/actions/{token}"), json!({ "quantity": 9 }))
         .await;
@@ -193,7 +193,7 @@ async fn approving_a_reduced_quantity_creates_a_po_and_updates_everything() {
         .find(|m| {
             m["card"]["title"]
                 .as_str()
-                .is_some_and(|x| x.contains("Arabica"))
+                .is_some_and(|x| x.contains("Bread Flour"))
         })
         .unwrap();
     assert_eq!(card["card"]["state"], "approved");
@@ -204,7 +204,7 @@ async fn approving_a_reduced_quantity_creates_a_po_and_updates_everything() {
         .as_array()
         .unwrap()
         .iter()
-        .find(|r| r["id"] == "p3")
+        .find(|r| r["id"] == "p7")
         .unwrap();
     assert!(row["tags"].as_array().unwrap().contains(&json!("on_order")));
     assert!(row["right"].as_str().unwrap().starts_with("PO-"));
@@ -224,7 +224,7 @@ async fn approving_a_reduced_quantity_creates_a_po_and_updates_everything() {
 #[tokio::test]
 async fn an_action_rejects_a_quantity_above_the_cap_without_burning_the_token() {
     let svc = Svc::new();
-    let token = svc.arabica_token().await;
+    let token = svc.flour_token().await;
     let (status, json) = svc
         .post(&format!("/v1/actions/{token}"), json!({ "quantity": 999 }))
         .await;
@@ -248,7 +248,7 @@ async fn an_action_rejects_a_forged_token() {
 #[tokio::test]
 async fn an_action_rejects_a_zero_quantity() {
     let svc = Svc::new();
-    let token = svc.arabica_token().await;
+    let token = svc.flour_token().await;
     let (status, json) = svc
         .post(&format!("/v1/actions/{token}"), json!({ "quantity": 0 }))
         .await;
@@ -259,7 +259,7 @@ async fn an_action_rejects_a_zero_quantity() {
 #[tokio::test]
 async fn an_action_token_works_only_once() {
     let svc = Svc::new();
-    let token = svc.arabica_token().await;
+    let token = svc.flour_token().await;
     let path = format!("/v1/actions/{token}");
     let (first, _) = svc.post(&path, json!({ "quantity": 4 })).await;
     assert_eq!(first, StatusCode::OK);
@@ -271,7 +271,7 @@ async fn an_action_token_works_only_once() {
 #[tokio::test]
 async fn a_retry_with_the_same_idempotency_key_gets_the_first_answer() {
     let svc = Svc::new();
-    let token = svc.arabica_token().await;
+    let token = svc.flour_token().await;
     let path = format!("/v1/actions/{token}");
     let (a, first) = svc
         .post_with_key(&path, json!({ "quantity": 4 }), "same")
@@ -294,7 +294,7 @@ async fn a_retry_with_the_same_idempotency_key_gets_the_first_answer() {
 #[tokio::test]
 async fn an_action_rejects_a_token_from_another_instance() {
     let other = Svc::new();
-    let token = other.arabica_token().await;
+    let token = other.flour_token().await;
     let (status, json) = Svc::new()
         .post(&format!("/v1/actions/{token}"), json!({ "quantity": 1 }))
         .await;
@@ -305,7 +305,7 @@ async fn an_action_rejects_a_token_from_another_instance() {
 #[tokio::test]
 async fn a_multi_line_order_checks_each_line_against_its_cap() {
     let svc = Svc::new();
-    let card = svc.card("reorder", "Susu Nusantara").await;
+    let card = svc.card("reorder", "Dairy Prima").await;
     let token = card["card"]["token"].as_str().unwrap();
     let lines = card["card"]["lines"].as_array().unwrap();
     let over: Vec<Value> = lines
@@ -326,18 +326,18 @@ async fn a_multi_line_order_checks_each_line_against_its_cap() {
         .post(&format!("/v1/actions/{token}"), json!({ "lines": edited }))
         .await;
     assert_eq!(status, StatusCode::OK, "{json}");
-    assert!(json["detail"].as_str().unwrap().contains("Susu Nusantara"));
+    assert!(json["detail"].as_str().unwrap().contains("Dairy Prima"));
 }
 
 #[tokio::test]
 async fn reject_spends_the_token_and_marks_the_card() {
     let svc = Svc::new();
-    let token = svc.arabica_token().await;
+    let token = svc.flour_token().await;
     let (status, _) = svc
         .post(&format!("/v1/actions/{token}/reject"), json!({}))
         .await;
     assert_eq!(status, StatusCode::OK);
-    let card = svc.card("reorder", "Arabica").await;
+    let card = svc.card("reorder", "Bread Flour").await;
     assert_eq!(card["card"]["state"], "rejected");
     let (status, _) = svc
         .post(&format!("/v1/actions/{token}"), json!({ "quantity": 3 }))
@@ -421,21 +421,21 @@ async fn stock_questions_work_from_any_thread() {
     let (_, t) = svc
         .post(
             "/v1/assistant/messages",
-            json!({ "topic": "stock", "text": "how much oat milk is left?" }),
+            json!({ "topic": "stock", "text": "how much fresh milk is left?" }),
         )
         .await;
     let text = messages(&t).last().unwrap()["text"]
         .as_str()
         .unwrap()
         .to_owned();
-    assert!(text.starts_with("Oat Milk 1 L: 2 L usable"), "{text}");
+    assert!(text.starts_with("Fresh Milk 1 L: 5 L usable"), "{text}");
     assert!(text.contains("past its date"), "{text}");
 }
 
 #[tokio::test]
 async fn a_markdown_goes_live_on_the_product() {
     let svc = Svc::new();
-    let card = svc.card("expiry", "Croissant").await;
+    let card = svc.card("expiry", "Butter Croissant").await;
     let n = card["card"]["quantity"].as_i64().unwrap();
     let token = card["card"]["token"].as_str().unwrap();
     let (status, json) = svc
@@ -443,13 +443,16 @@ async fn a_markdown_goes_live_on_the_product() {
         .await;
     assert_eq!(status, StatusCode::OK, "{json}");
     let (_, products) = svc.get("/v1/products").await;
-    let p2 = products["products"]
+    let croissant = products["products"]
         .as_array()
         .unwrap()
         .iter()
-        .find(|p| p["id"] == "p2")
+        .find(|p| p["id"] == "p1")
         .unwrap();
-    assert!(p2["status"].as_str().unwrap().contains("% off"), "{p2}");
+    assert!(
+        croissant["status"].as_str().unwrap().contains("% off"),
+        "{croissant}"
+    );
 }
 
 #[tokio::test]
@@ -545,6 +548,79 @@ async fn a_waste_photo_becomes_a_grounded_card_and_loses_its_gps() {
         }
     }
     assert!(card["uncertain"]["candidates"].as_array().unwrap().len() <= 3);
+}
+
+async fn upload_to(svc: &Svc, path: &str) -> Value {
+    let (status, json) = svc
+        .send(
+            Request::post(path)
+                .header("content-type", "image/jpeg")
+                .body(Body::from(jpeg_with_gps()))
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{json}");
+    json
+}
+
+#[tokio::test]
+async fn a_stock_photo_is_counted_checked_and_reordered() {
+    let svc = Svc::new();
+    upload_to(&svc, "/v1/stock/photos").await;
+    let t = svc.thread("stock").await;
+    let card = messages(&t)
+        .iter()
+        .find(|m| m["type"] == "count_card")
+        .unwrap_or_else(|| panic!("no count card: {t}"))["card"]
+        .clone();
+    let lines = card["lines"].as_array().unwrap();
+    assert!(!lines.is_empty());
+    for l in lines {
+        assert!(l["system"].is_number() && l["counted"].is_number());
+        assert!(l["needLabel"].is_string() && l["coverLabel"].is_string());
+    }
+
+    // A product that was not in the photo cannot be adjusted.
+    let token = card["token"].as_str().unwrap();
+    let (status, _) = svc
+        .post(
+            &format!("/v1/actions/{token}"),
+            json!({ "lines": [{ "productId": "p16", "quantity": 3 }] }),
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // Count the first product down to zero: stock follows, an order appears.
+    let pid = lines[0]["productId"].as_str().unwrap().to_owned();
+    let (status, json) = svc
+        .post(
+            &format!("/v1/actions/{token}"),
+            json!({ "lines": [{ "productId": pid, "quantity": 0 }] }),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{json}");
+    assert!(json["title"].as_str().unwrap().starts_with("Stock updated"));
+
+    let (_, detail) = svc.get(&format!("/v1/products/{pid}")).await;
+    assert!(
+        detail["lots"].as_array().unwrap().is_empty(),
+        "counted to zero: {detail}"
+    );
+    let (_, activity) = svc.get("/v1/activity").await;
+    assert!(
+        activity["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["topic"] == "passtok.stock.counted")
+    );
+    let (status, _) = svc
+        .post(
+            &format!("/v1/actions/{token}"),
+            json!({ "lines": [{ "productId": pid, "quantity": 1 }] }),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT, "a count is confirmed once");
 }
 
 #[tokio::test]
@@ -674,7 +750,7 @@ async fn products_total_matches_the_list_and_detail_has_a_forecast() {
             assert!(p["subtitle"].is_string(), "{}", p["name"]);
         }
     }
-    let (status, detail) = svc.get("/v1/products/p3").await;
+    let (status, detail) = svc.get("/v1/products/p7").await;
     assert_eq!(status, StatusCode::OK);
     let series = detail["series"].as_array().unwrap();
     assert!(series.iter().any(|s| s["forecast"].is_number()));
@@ -766,13 +842,13 @@ async fn dashboard_has_impact_and_forecast_series() {
 #[tokio::test]
 async fn the_demo_kit_resets_the_morning() {
     let svc = Svc::new();
-    let token = svc.arabica_token().await;
+    let token = svc.flour_token().await;
     svc.post(&format!("/v1/actions/{token}"), json!({ "quantity": 3 }))
         .await;
     let (status, _) = svc.post("/v1/admin/reset", json!({})).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
-        svc.card("reorder", "Arabica").await["card"]["state"],
+        svc.card("reorder", "Bread Flour").await["card"]["state"],
         "open"
     );
 }

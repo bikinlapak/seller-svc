@@ -7,7 +7,7 @@
 //! - "what if I order 8" / a bare number → how long that lasts, plus a button;
 //! - "we're closed two days next week" / "libur 2 hari" → the closure is saved
 //!   for future forecasts and the order is recomputed;
-//! - "how much oat milk is left?" → stock, lots and run-out day;
+//! - "how much butter is left?" → stock, lots and run-out day;
 //! - anything else → what the assistant can help with (it stays in scope:
 //!   stock and procurement only, decision L28).
 //!
@@ -55,7 +55,7 @@ pub struct Intent {
     pub closure_days: Option<i64>,
     #[serde(default)]
     pub next_week: bool,
-    /// Product words as the merchant wrote them ("oat milk").
+    /// Product words as the merchant wrote them ("butter").
     #[serde(default)]
     pub product: Option<String>,
 }
@@ -180,7 +180,7 @@ pub fn answer_intent(
 
     Ok(agent_text(
         id,
-        "I can help with stock, orders, expiring items and leftovers. Try \"why 12?\", \"what if I order 8?\", \"we're closed 2 days next week\" or \"how much oat milk is left?\"",
+        "I can help with stock, orders, expiring bakes and leftovers. Try \"why so much flour?\", \"what if I order 100?\", \"we're closed 2 days next week\" or \"how much butter is left?\"",
     ))
 }
 
@@ -497,7 +497,7 @@ pub async fn llm_intent(
     products: &[String],
     open_suggestion: Option<&str>,
 ) -> Option<Intent> {
-    let system = "You classify one message a café owner sends to their stock assistant. \
+    let system = "You classify one message a bakery owner sends to their stock assistant. \
         kind: why = asks the reason behind a suggestion; what_if = asks about ordering a \
         different quantity (put it in quantity); closure = says the shop will be closed for \
         some days (closure_days, and next_week=true if they mean next week); stock = asks how \
@@ -582,7 +582,7 @@ pub async fn localise(
         _ => return None,
     };
     let system = format!(
-        "Translate a café stock assistant's reply, and each of its button labels, into \
+        "Translate a bakery stock assistant's reply, and each of its button labels, into \
          {tone}. Keep the meaning exactly: every number, unit, product name, day and rupiah \
          amount as given, and which days are closed or open. Do not add, round or compute \
          anything; do not add advice. Keep it as short as the original."

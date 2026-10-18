@@ -1,11 +1,12 @@
-//! Jasa Coffee Shop: a deterministic demo tenant.
+//! Hangat Bakery: a deterministic demo tenant.
 //!
-//! 90 days of demand with the patterns a judge would expect from a real café
-//! (busier weekends, a payday bump, one closed day, a promo week, a few
-//! oat-milk stockout days), and today's lots arranged so the morning run
-//! produces the demo's stories: Arabica runs out Thursday, a croissant lot
-//! expires tomorrow with more than will sell, a lot of oat milk is already past
-//! its date. Same seed, same numbers, every run — PRD §14 "demo data looks
+//! 90 days of demand with the patterns a judge would expect from a real
+//! bakery (busier weekends, a payday bump, one closed day, a pastry promo
+//! week, a few butter stockout days), and today's lots arranged so the
+//! morning run produces the demo's stories: bread flour runs out in two days,
+//! butter and milk go on one grouped order, this morning's croissants and
+//! baguettes are baked beyond what will sell, and a lot of milk is already
+//! past its date. Same seed, same numbers, every run — PRD §14 "demo data looks
 //! fake" is answered by generating it from realistic patterns and saying so.
 
 use chrono::{Datelike, Duration, NaiveDate};
@@ -13,7 +14,7 @@ use chrono::{Datelike, Duration, NaiveDate};
 use super::*;
 use crate::engine::waste::{Destination, WasteRecord};
 
-pub const TENANT: &str = "jasa-coffee-shop";
+pub const TENANT: &str = "hangat-bakery";
 const HISTORY_DAYS: i64 = 90;
 
 /// splitmix64: tiny, deterministic, good enough for demo noise.
@@ -58,96 +59,150 @@ struct Spec {
 const SPECS: &[Spec] = &[
     Spec {
         id: "p1",
-        name: "Palm Sugar Latte 250 ml",
-        category: Category::Drinks,
-        unit: "cup",
-        sell_price: Some(35_000),
-        cost: 11_000,
-        track_stock: false,
-        shelf_life_days: None,
+        name: "Butter Croissant",
+        category: Category::Pastries,
+        unit: "pcs",
+        sell_price: Some(18_000),
+        cost: 7_000,
+        track_stock: true,
+        shelf_life_days: Some(2),
         supplier: None,
         pack: 1,
         moq: 1,
-        weight_gram: 0,
-        base: 38.0,
+        weight_gram: 70,
+        base: 20.0,
         whole: true,
-        colour: "#EAD9C2",
-        description: "Espresso, fresh milk and Banten palm sugar. Made to order.",
+        colour: "#E8D3AE",
+        description: "Laminated with cultured butter, baked every morning.",
     },
     Spec {
         id: "p2",
-        name: "Butter Croissant (box of 4)",
-        category: Category::Bakery,
-        unit: "box",
-        sell_price: Some(60_000),
-        cost: 36_000,
+        name: "Chocolate Croissant",
+        category: Category::Pastries,
+        unit: "pcs",
+        sell_price: Some(22_000),
+        cost: 9_000,
         track_stock: true,
-        shelf_life_days: Some(3),
-        supplier: Some("sup-roti"),
+        shelf_life_days: Some(2),
+        supplier: None,
         pack: 1,
-        moq: 4,
-        weight_gram: 240,
-        base: 3.0,
+        moq: 1,
+        weight_gram: 80,
+        base: 14.0,
         whole: true,
-        colour: "#E8DCC8",
-        description: "Four all-butter croissants from Roti Pagi, delivered every morning.",
+        colour: "#D9BFA0",
+        description: "Croissant dough around two batons of dark chocolate.",
     },
     Spec {
         id: "p3",
-        name: "Arabica Beans 1 kg",
-        category: Category::Ingredients,
-        unit: "kg",
-        sell_price: None,
-        cost: 210_000,
+        name: "Cinnamon Roll",
+        category: Category::Pastries,
+        unit: "pcs",
+        sell_price: Some(20_000),
+        cost: 7_000,
         track_stock: true,
-        shelf_life_days: Some(60),
-        supplier: Some("sup-kopi"),
+        shelf_life_days: Some(2),
+        supplier: None,
         pack: 1,
-        moq: 2,
-        weight_gram: 1000,
-        base: 1.6,
-        whole: false,
-        colour: "#DCCFBD",
-        description: "Single-origin Gayo arabica, medium roast. The house espresso.",
+        moq: 1,
+        weight_gram: 110,
+        base: 12.0,
+        whole: true,
+        colour: "#E3C9A4",
+        description: "Soft roll with cinnamon sugar and a cream-cheese glaze.",
     },
     Spec {
         id: "p4",
-        name: "Oat Milk 1 L",
-        category: Category::Ingredients,
-        unit: "L",
-        sell_price: None,
-        cost: 32_000,
+        name: "Sourdough Loaf",
+        category: Category::Bread,
+        unit: "loaf",
+        sell_price: Some(45_000),
+        cost: 15_000,
         track_stock: true,
-        shelf_life_days: Some(10),
-        supplier: Some("sup-susu"),
-        pack: 6,
-        moq: 6,
-        weight_gram: 1030,
-        base: 1.2,
-        whole: false,
-        colour: "#E6E2D6",
-        description: "Barista oat milk for plant-based drinks.",
+        shelf_life_days: Some(3),
+        supplier: None,
+        pack: 1,
+        moq: 1,
+        weight_gram: 800,
+        base: 10.0,
+        whole: true,
+        colour: "#D6BC94",
+        description: "48-hour naturally leavened country loaf.",
     },
     Spec {
         id: "p5",
-        name: "Palm Sugar Doughnut",
-        category: Category::Bakery,
-        unit: "pcs",
-        sell_price: Some(15_000),
-        cost: 6_000,
+        name: "Milk Bread",
+        category: Category::Bread,
+        unit: "loaf",
+        sell_price: Some(30_000),
+        cost: 10_000,
         track_stock: true,
-        shelf_life_days: Some(2),
-        supplier: Some("sup-roti"),
-        pack: 6,
-        moq: 6,
-        weight_gram: 70,
-        base: 8.0,
+        shelf_life_days: Some(3),
+        supplier: None,
+        pack: 1,
+        moq: 1,
+        weight_gram: 450,
+        base: 9.0,
         whole: true,
-        colour: "#EFE0CB",
-        description: "Brioche doughnut glazed with palm sugar caramel.",
+        colour: "#F0E2C8",
+        description: "Soft Hokkaido-style pull-apart loaf (roti sobek).",
     },
     Spec {
         id: "p6",
+        name: "Baguette",
+        category: Category::Bread,
+        unit: "pcs",
+        sell_price: Some(25_000),
+        cost: 8_000,
+        track_stock: true,
+        shelf_life_days: Some(1),
+        supplier: None,
+        pack: 1,
+        moq: 1,
+        weight_gram: 250,
+        base: 9.0,
+        whole: true,
+        colour: "#DDBF8E",
+        description: "Crisp French baguette, best on the day it is baked.",
+    },
+    Spec {
+        id: "p7",
+        name: "Bread Flour",
+        category: Category::Ingredients,
+        unit: "kg",
+        sell_price: None,
+        cost: 14_000,
+        track_stock: true,
+        shelf_life_days: Some(180),
+        supplier: Some("sup-tepung"),
+        pack: 25,
+        moq: 25,
+        weight_gram: 1000,
+        base: 22.0,
+        whole: false,
+        colour: "#EFE9DD",
+        description: "High-protein bread flour, delivered in 25 kg sacks.",
+    },
+    Spec {
+        id: "p8",
+        name: "Butter",
+        category: Category::Ingredients,
+        unit: "kg",
+        sell_price: None,
+        cost: 140_000,
+        track_stock: true,
+        shelf_life_days: Some(30),
+        supplier: Some("sup-dairy"),
+        pack: 5,
+        moq: 5,
+        weight_gram: 1000,
+        base: 4.5,
+        whole: false,
+        colour: "#F2E3B3",
+        description: "Unsalted butter for lamination, 1 kg blocks in cases of 5.",
+    },
+    Spec {
+        id: "p9",
         name: "Fresh Milk 1 L",
         category: Category::Ingredients,
         unit: "L",
@@ -155,140 +210,140 @@ const SPECS: &[Spec] = &[
         cost: 22_000,
         track_stock: true,
         shelf_life_days: Some(7),
-        supplier: Some("sup-susu"),
+        supplier: Some("sup-dairy"),
         pack: 6,
         moq: 6,
         weight_gram: 1030,
-        base: 2.6,
+        base: 6.0,
         whole: false,
         colour: "#F1ECE2",
-        description: "Full-cream fresh milk for lattes.",
-    },
-    Spec {
-        id: "p7",
-        name: "Palm Sugar 1 kg",
-        category: Category::Ingredients,
-        unit: "kg",
-        sell_price: None,
-        cost: 28_000,
-        track_stock: true,
-        shelf_life_days: Some(180),
-        supplier: Some("sup-gula"),
-        pack: 1,
-        moq: 5,
-        weight_gram: 1000,
-        base: 0.8,
-        whole: false,
-        colour: "#D9C3A5",
-        description: "Banten palm sugar block, for syrups and glaze.",
-    },
-    Spec {
-        id: "p8",
-        name: "Wholemeal Bread",
-        category: Category::Bakery,
-        unit: "loaf",
-        sell_price: Some(25_000),
-        cost: 12_000,
-        track_stock: true,
-        shelf_life_days: Some(3),
-        supplier: Some("sup-roti"),
-        pack: 1,
-        moq: 2,
-        weight_gram: 400,
-        base: 2.0,
-        whole: true,
-        colour: "#D8C6A8",
-        description: "Wholemeal sourdough loaf.",
-    },
-    Spec {
-        id: "p9",
-        name: "Milk Bun",
-        category: Category::Bakery,
-        unit: "pcs",
-        sell_price: Some(12_000),
-        cost: 5_000,
-        track_stock: true,
-        shelf_life_days: Some(2),
-        supplier: Some("sup-roti"),
-        pack: 6,
-        moq: 6,
-        weight_gram: 60,
-        base: 3.0,
-        whole: true,
-        colour: "#F2E6D3",
-        description: "Soft Hokkaido-style milk bun.",
+        description: "Full-cream fresh milk for doughs and custards.",
     },
     Spec {
         id: "p10",
-        name: "Cold Brew 250 ml",
-        category: Category::Drinks,
-        unit: "bottle",
-        sell_price: Some(30_000),
-        cost: 12_000,
+        name: "Eggs (tray of 30)",
+        category: Category::Ingredients,
+        unit: "tray",
+        sell_price: None,
+        cost: 60_000,
         track_stock: true,
-        shelf_life_days: Some(5),
-        supplier: None,
+        shelf_life_days: Some(21),
+        supplier: Some("sup-telur"),
         pack: 1,
-        moq: 1,
-        weight_gram: 280,
-        base: 4.0,
-        whole: true,
-        colour: "#CDB89C",
-        description: "18-hour cold brew, bottled in house.",
+        moq: 2,
+        weight_gram: 1800,
+        base: 2.2,
+        whole: false,
+        colour: "#EBD9B9",
+        description: "Free-range eggs, trays of 30.",
     },
     Spec {
         id: "p11",
-        name: "Iced Americano",
+        name: "Sugar",
+        category: Category::Ingredients,
+        unit: "kg",
+        sell_price: None,
+        cost: 17_000,
+        track_stock: true,
+        shelf_life_days: Some(365),
+        supplier: Some("sup-tepung"),
+        pack: 1,
+        moq: 10,
+        weight_gram: 1000,
+        base: 3.0,
+        whole: false,
+        colour: "#F4F1EA",
+        description: "Fine white sugar.",
+    },
+    Spec {
+        id: "p12",
+        name: "Dark Chocolate",
+        category: Category::Ingredients,
+        unit: "kg",
+        sell_price: None,
+        cost: 180_000,
+        track_stock: true,
+        shelf_life_days: Some(180),
+        supplier: Some("sup-kakao"),
+        pack: 1,
+        moq: 2,
+        weight_gram: 1000,
+        base: 0.6,
+        whole: false,
+        colour: "#7A5A43",
+        description: "55% dark chocolate batons for pain au chocolat.",
+    },
+    Spec {
+        id: "p13",
+        name: "Instant Yeast 500 g",
+        category: Category::Ingredients,
+        unit: "pack",
+        sell_price: None,
+        cost: 35_000,
+        track_stock: true,
+        shelf_life_days: Some(120),
+        supplier: Some("sup-tepung"),
+        pack: 1,
+        moq: 4,
+        weight_gram: 500,
+        base: 0.4,
+        whole: false,
+        colour: "#E9E2CF",
+        description: "Instant dry yeast, 500 g vacuum packs.",
+    },
+    Spec {
+        id: "p14",
+        name: "Paper Bag (pack of 100)",
+        category: Category::Supplies,
+        unit: "pack",
+        sell_price: None,
+        cost: 50_000,
+        track_stock: true,
+        shelf_life_days: None,
+        supplier: Some("sup-kemas"),
+        pack: 1,
+        moq: 2,
+        weight_gram: 900,
+        base: 0.6,
+        whole: false,
+        colour: "#EDE7DC",
+        description: "Brown paper bags for takeaway bread.",
+    },
+    Spec {
+        id: "p15",
+        name: "Hot Chocolate",
         category: Category::Drinks,
         unit: "cup",
-        sell_price: Some(25_000),
-        cost: 7_000,
+        sell_price: Some(28_000),
+        cost: 9_000,
         track_stock: false,
         shelf_life_days: None,
         supplier: None,
         pack: 1,
         moq: 1,
         weight_gram: 0,
-        base: 22.0,
+        base: 15.0,
         whole: true,
-        colour: "#E1D2BC",
-        description: "Double shot over ice. Made to order.",
+        colour: "#C9A98A",
+        description: "Made to order with our dark chocolate.",
     },
     Spec {
-        id: "p12",
-        name: "Banana Bread Slice",
-        category: Category::Bakery,
-        unit: "slice",
-        sell_price: Some(20_000),
-        cost: 8_000,
+        id: "p16",
+        name: "Cheese Danish",
+        category: Category::Pastries,
+        unit: "pcs",
+        sell_price: Some(24_000),
+        cost: 9_000,
         track_stock: false,
-        shelf_life_days: Some(3),
+        shelf_life_days: Some(2),
         supplier: None,
         pack: 1,
         moq: 1,
         weight_gram: 90,
         base: 0.0,
         whole: true,
-        colour: "#E4D0B0",
+        colour: "#EAD6A8",
         description: "Draft: recipe still being tested.",
-    },
-    Spec {
-        id: "p13",
-        name: "Paper Cup 12 oz (pack of 50)",
-        category: Category::Supplies,
-        unit: "pack",
-        sell_price: None,
-        cost: 45_000,
-        track_stock: true,
-        shelf_life_days: None,
-        supplier: Some("sup-kemas"),
-        pack: 1,
-        moq: 2,
-        weight_gram: 600,
-        base: 0.5,
-        whole: false,
-        colour: "#EDE7DC",
-        description: "Takeaway cups, recyclable.",
     },
 ];
 
@@ -300,15 +355,15 @@ fn suppliers() -> Vec<Supplier> {
         lead_time_days: lead,
     };
     vec![
-        s("sup-kopi", "Sumber Kopi", "6281200000001", 2),
-        s("sup-roti", "Roti Pagi", "6281200000002", 1),
-        s("sup-susu", "Susu Nusantara", "6281200000003", 1),
-        s("sup-gula", "Gula Aren Banten", "6281200000004", 3),
+        s("sup-tepung", "Tepung Jaya", "6281200000001", 2),
+        s("sup-dairy", "Dairy Prima", "6281200000002", 1),
+        s("sup-telur", "Telur Segar Farm", "6281200000003", 1),
+        s("sup-kakao", "Kakao Nusantara", "6281200000004", 3),
         s("sup-kemas", "Kemasan Jaya", "6281200000005", 4),
     ]
 }
 
-/// A café is busier at the weekend.
+/// A bakery is busier at the weekend.
 fn weekday_factor(d: NaiveDate) -> f64 {
     [0.9, 0.9, 0.95, 1.0, 1.1, 1.3, 1.2][d.weekday().num_days_from_monday() as usize]
 }
@@ -319,11 +374,11 @@ fn is_payday(d: NaiveDate) -> bool {
 }
 
 pub fn build(today: NaiveDate) -> ShopData {
-    let mut rng = Rng(0x00C0_FFEE);
+    let mut rng = Rng(0x00B4_CE11);
     let start = today - Duration::days(HISTORY_DAYS);
     let closed_day = today - Duration::days(40);
     let promo = (today - Duration::days(60))..=(today - Duration::days(54));
-    let oat_stockout = (today - Duration::days(20))..=(today - Duration::days(18));
+    let butter_stockout = (today - Duration::days(20))..=(today - Duration::days(18));
 
     let products: Vec<Product> = SPECS
         .iter()
@@ -341,7 +396,7 @@ pub fn build(today: NaiveDate) -> ShopData {
             pack_size: s.pack,
             min_order_qty: s.moq,
             weight_gram: s.weight_gram,
-            draft: s.id == "p12",
+            draft: s.id == "p16",
             colour: s.colour.into(),
             description: s.description.into(),
         })
@@ -357,7 +412,7 @@ pub fn build(today: NaiveDate) -> ShopData {
                     if is_payday(date) {
                         mean *= 1.15;
                     }
-                    if promo.contains(&date) && matches!(s.id, "p1" | "p5") {
+                    if promo.contains(&date) && matches!(s.id, "p1" | "p3") {
                         mean *= 1.4;
                     }
                     let noise = 0.75 + 0.5 * rng.unit();
@@ -368,7 +423,7 @@ pub fn build(today: NaiveDate) -> ShopData {
                         (qty * 10.0).round() / 10.0
                     };
                     let closed = date == closed_day;
-                    let stockout = s.id == "p4" && oat_stockout.contains(&date);
+                    let stockout = s.id == "p8" && butter_stockout.contains(&date);
                     if closed {
                         qty = 0.0;
                     } else if stockout {
@@ -396,22 +451,28 @@ pub fn build(today: NaiveDate) -> ShopData {
         received: d(received),
     };
     let lots = vec![
-        lot("L-771", "p3", 4, Some(d(50)), -10),
-        lot("L-889", "p2", 14, Some(d(1)), -1),
-        lot("L-901", "p4", 2, Some(d(-1)), -9),
-        lot("L-902", "p4", 2, Some(d(3)), -4),
-        lot("L-930", "p5", 12, Some(d(1)), 0),
-        lot("L-911", "p6", 4, Some(d(4)), -3),
-        lot("L-640", "p7", 9, Some(d(120)), -30),
-        lot("L-925", "p8", 4, Some(d(0)), -2),
-        lot("L-931", "p9", 6, Some(d(1)), 0),
-        lot("L-920", "p10", 10, Some(d(3)), -2),
-        lot("L-512", "p13", 3, None, -20),
+        // Ingredients, bought in.
+        lot("L-101", "p7", 40, Some(d(150)), -12),
+        lot("L-102", "p8", 6, Some(d(20)), -6),
+        lot("L-103", "p9", 2, Some(d(-1)), -8),
+        lot("L-104", "p9", 5, Some(d(4)), -3),
+        lot("L-105", "p10", 4, Some(d(14)), -5),
+        lot("L-106", "p11", 30, Some(d(300)), -20),
+        lot("L-107", "p12", 5, Some(d(150)), -15),
+        lot("L-108", "p13", 3, Some(d(90)), -10),
+        lot("L-109", "p14", 4, None, -25),
+        // This morning's bake (and yesterday's loaves).
+        lot("B-201", "p1", 50, Some(d(1)), 0),
+        lot("B-202", "p2", 20, Some(d(1)), 0),
+        lot("B-203", "p3", 16, Some(d(1)), 0),
+        lot("B-204", "p4", 8, Some(d(2)), -1),
+        lot("B-205", "p5", 10, Some(d(2)), -1),
+        lot("B-206", "p6", 14, Some(d(0)), 0),
     ];
 
     ShopData {
         tenant: TENANT.into(),
-        name: "Jasa Coffee Shop".into(),
+        name: "Hangat Bakery".into(),
         owner: "Rima".into(),
         location: "Main store".into(),
         products,
@@ -428,7 +489,7 @@ pub fn build(today: NaiveDate) -> ShopData {
 pub fn past_waste(data: &ShopData, today: NaiveDate) -> Vec<WasteRecord> {
     let mut rng = Rng(0x0005_7A5E);
     let mut out = Vec::new();
-    let items = ["p2", "p5", "p8", "p9", "p4", "p6"];
+    let items = ["p1", "p2", "p3", "p4", "p5", "p6", "p9"];
     for week in 1..=4i64 {
         // Week 4 is the oldest. Landfill share falls from ~70% to ~20%.
         let landfill_share = 0.1 + 0.15 * week as f64;
@@ -485,27 +546,27 @@ mod tests {
     fn same_seed_same_data() {
         let a = build(today());
         let b = build(today());
-        assert_eq!(a.history("p3"), b.history("p3"));
+        assert_eq!(a.history("p7"), b.history("p7"));
     }
 
     #[test]
     fn history_is_ninety_days_ending_yesterday() {
         let data = build(today());
-        let h = data.history("p3");
+        let h = data.history("p7");
         assert_eq!(h.len(), 90);
         assert_eq!(h.last().unwrap().date, today() - Duration::days(1));
     }
 
     #[test]
-    fn oat_milk_has_flagged_stockout_days() {
+    fn butter_has_flagged_stockout_days() {
         let data = build(today());
-        assert_eq!(data.history("p4").iter().filter(|d| d.stockout).count(), 3);
+        assert_eq!(data.history("p8").iter().filter(|d| d.stockout).count(), 3);
     }
 
     #[test]
     fn an_expired_lot_is_not_usable() {
         let data = build(today());
-        assert_eq!(data.total_on_hand("p4"), 4);
-        assert_eq!(data.usable_on_hand("p4", today()), 2);
+        assert_eq!(data.total_on_hand("p9"), 7);
+        assert_eq!(data.usable_on_hand("p9", today()), 5);
     }
 }

@@ -23,25 +23,25 @@ pub struct Recipe {
 pub const RECIPES: &[Recipe] = &[
     Recipe {
         name: "Croissant Bread Pudding",
-        lines: &[("p2", 0.25), ("p6", 0.1), ("p7", 0.02)],
+        lines: &[("p1", 1.0), ("p9", 0.1), ("p10", 0.034), ("p11", 0.03)],
+        price: 25_000,
+        method: "Tear day-old croissants, soak in a milk, egg and sugar custard, bake 30 minutes.",
+    },
+    Recipe {
+        name: "Baguette Garlic Toast",
+        lines: &[("p6", 0.5), ("p8", 0.02)],
         price: 18_000,
-        method: "Tear the croissants, soak in milk and palm sugar custard, bake 25 minutes.",
+        method: "Slice the baguette, brush with garlic butter, toast until golden.",
     },
     Recipe {
-        name: "Milk Bun French Toast",
-        lines: &[("p9", 1.0), ("p6", 0.05), ("p7", 0.01)],
-        price: 16_000,
-        method: "Dip halved buns in milk and egg, pan-fry, finish with palm sugar syrup.",
-    },
-    Recipe {
-        name: "Palm Sugar Toast",
-        lines: &[("p8", 0.125), ("p7", 0.015)],
-        price: 15_000,
-        method: "Thick wholemeal toast brushed with butter and palm sugar caramel.",
+        name: "Sourdough French Toast",
+        lines: &[("p4", 0.25), ("p10", 0.034), ("p9", 0.05), ("p11", 0.01)],
+        price: 28_000,
+        method: "Thick sourdough slices dipped in egg and milk, pan-fried, dusted with sugar.",
     },
 ];
 
-/// No more portions than a café sells of one special in a day.
+/// No more portions than a bakery sells of one special in a day.
 pub const MAX_PORTIONS: i64 = 12;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -132,34 +132,34 @@ mod tests {
 
     #[test]
     fn uses_at_risk_croissants_within_stock() {
-        let available = map(&[("p2", 14), ("p6", 6), ("p7", 9)]);
-        let at_risk = map(&[("p2", 2)]);
-        let cost = map(&[("p2", 36_000)]);
+        let available = map(&[("p1", 50), ("p9", 5), ("p10", 4), ("p11", 30)]);
+        let at_risk = map(&[("p1", 8)]);
+        let cost = map(&[("p1", 7_000)]);
         let s = propose(&available, &at_risk, &cost).unwrap();
         assert_eq!(s.name, "Croissant Bread Pudding");
-        assert_eq!(s.portions, 8, "2 boxes × 4 croissants");
-        assert_eq!(s.expected_recovered, 8 * 18_000);
-        assert_eq!(s.uses[0], ("p2".into(), 2));
+        assert_eq!(s.portions, 8, "one croissant per portion");
+        assert_eq!(s.expected_recovered, 8 * 25_000);
+        assert_eq!(s.uses[0], ("p1".into(), 8));
     }
 
     #[test]
     fn missing_ingredient_means_no_special() {
-        let available = map(&[("p2", 14), ("p7", 9)]); // no milk
-        let at_risk = map(&[("p2", 8)]);
+        let available = map(&[("p1", 50), ("p10", 4), ("p11", 30)]); // no milk
+        let at_risk = map(&[("p1", 8)]);
         assert!(propose(&available, &at_risk, &map(&[])).is_none());
     }
 
     #[test]
     fn never_more_than_a_day_can_sell() {
-        let available = map(&[("p2", 50), ("p6", 50), ("p7", 50)]);
-        let at_risk = map(&[("p2", 40)]);
-        let s = propose(&available, &at_risk, &map(&[("p2", 36_000)])).unwrap();
+        let available = map(&[("p1", 50), ("p9", 50), ("p10", 50), ("p11", 50)]);
+        let at_risk = map(&[("p1", 40)]);
+        let s = propose(&available, &at_risk, &map(&[("p1", 7_000)])).unwrap();
         assert_eq!(s.portions, MAX_PORTIONS);
     }
 
     #[test]
     fn nothing_at_risk_nothing_proposed() {
-        let available = map(&[("p2", 14), ("p6", 6), ("p7", 9)]);
+        let available = map(&[("p1", 50), ("p9", 5), ("p10", 4), ("p11", 30)]);
         assert!(propose(&available, &map(&[]), &map(&[])).is_none());
     }
 }

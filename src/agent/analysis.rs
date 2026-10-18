@@ -190,41 +190,46 @@ mod tests {
         let all = analyze_all(&s);
         let get = |id: &str| all.iter().find(|a| a.product_id == id).unwrap();
 
-        // Arabica runs short and gets an order of about 12 kg.
-        let arabica = get("p3");
-        assert!(arabica.cover < 3.5, "cover {}", arabica.cover);
-        let q = arabica.plan.unwrap().qty;
-        assert!((10..=15).contains(&q), "arabica qty {q}");
+        // Bread flour runs short; the order comes in whole 25 kg sacks.
+        let flour = get("p7");
+        assert!(flour.cover < 3.0, "cover {}", flour.cover);
+        let q = flour.plan.unwrap().qty;
+        assert!(q >= 100 && q % 25 == 0, "flour qty {q}");
 
-        // Croissants: a lot expiring tomorrow with more than will sell.
-        let croissant = get("p2");
-        assert!(croissant.at_risk_total() >= 5, "{:?}", croissant.risks);
+        // This morning's croissants: more baked than will sell by tomorrow.
+        assert!(get("p1").at_risk_total() >= 3, "{:?}", get("p1").risks);
 
-        // Doughnuts: the expiry cap bites.
-        let donut = get("p5").plan.unwrap();
-        assert!(donut.cap.is_some());
-        assert!(donut.qty as f64 <= donut.cap.unwrap());
+        // Milk: the expiry cap bites, and the order stays under it.
+        let milk = get("p9").plan.unwrap();
+        assert!(milk.cap.is_some());
+        assert!(milk.qty as f64 <= milk.cap.unwrap());
 
-        // Milk from one supplier is grouped into one order.
+        // Butter and milk from Dairy Prima go on one grouped order; eggs on
+        // their own (the single-product card the Q&A demo uses).
         let groups = reorder_groups(&all, &s);
-        let susu = groups.iter().find(|(sid, _)| sid == "sup-susu");
-        assert!(susu.is_some_and(|(_, v)| v.len() == 2), "{groups:?}");
+        let dairy = groups.iter().find(|(sid, _)| sid == "sup-dairy");
+        assert!(dairy.is_some_and(|(_, v)| v.len() == 2), "{groups:?}");
+        assert!(
+            groups
+                .iter()
+                .any(|(sid, v)| sid == "sup-telur" && v.len() == 1)
+        );
     }
 
     #[test]
     fn repeated_waste_lowers_the_suggestion() {
         let mut s = state();
-        let before = analyze(&s, "p5").unwrap().plan.unwrap().raw_qty;
+        let before = analyze(&s, "p10").unwrap().plan.unwrap().raw_qty;
         let records = demo::past_waste(&s.data, s.today);
         let mut r = records[0].clone();
-        r.product_id = "p5".into();
+        r.product_id = "p10".into();
         for i in 0..WASTE_REPEAT {
             let mut x = r.clone();
             x.id = format!("x{i}");
             x.date = s.today;
             s.waste.push(x);
         }
-        let after = analyze(&s, "p5").unwrap().plan.unwrap().raw_qty;
+        let after = analyze(&s, "p10").unwrap().plan.unwrap().raw_qty;
         assert!(after < before, "{after} !< {before}");
     }
 }

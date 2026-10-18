@@ -85,10 +85,10 @@ pub async fn refresh_special(
         .collect();
 
     // 2. Ask, outside the lock.
-    let system = "You are a café chef proposing ONE simple dish for today's menu that uses up \\
-        ingredients about to expire. Use only the product ids given. The first line must be one \\
-        of the at-risk items. per_portion is in that product's own unit (e.g. 0.25 of a \\
-        'box of 4', 0.1 of a litre). Suggest a fair café price in rupiah. method: one or two \\
+    let system = "You are a baker proposing ONE simple bake or dish for today's menu that uses up \
+        ingredients about to expire. Use only the product ids given. The first line must be one \
+        of the at-risk items. per_portion is in that product's own unit (e.g. 1 croissant, \
+        0.1 of a litre of milk). Suggest a fair bakery price in rupiah. method: one or two \
         short sentences. Do not mention quantities of portions or money in the name or method.";
     let prompt = json!({ "at_risk": risky, "in_stock": stock }).to_string();
     let schema = json!({
@@ -173,7 +173,7 @@ fn check(
     let known = |id: &str| catalog.iter().any(|(c, _, _)| c == id);
     let mut lines: Vec<(String, f64)> = Vec::new();
     for l in &idea.lines {
-        // Unknown product, duplicate, or a per-portion amount no café uses.
+        // Unknown product, duplicate, or a per-portion amount no bakery uses.
         if !known(&l.product_id)
             || lines.iter().any(|(p, _)| *p == l.product_id)
             || !(l.per_portion > 0.0 && l.per_portion <= 2.0)

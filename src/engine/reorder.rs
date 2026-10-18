@@ -232,7 +232,7 @@ mod tests {
 
     #[test]
     fn expiry_cap_limits_the_order() {
-        // Doughnuts: 8/day, 2-day shelf life, 1-day lead → sellable 1 day → cap 8.
+        // Fresh pastry: 8/day, 2-day shelf life, 1-day lead → sellable 1 day → cap 8.
         let mut i = input(4.0);
         i.lead_time_days = 1;
         i.shelf_life_days = Some(2);

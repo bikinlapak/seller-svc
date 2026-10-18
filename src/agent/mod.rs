@@ -13,6 +13,7 @@ pub mod analysis;
 pub mod answer;
 pub mod explain;
 pub mod idea;
+pub mod stockcount;
 pub mod vision;
 
 use std::collections::HashMap;
@@ -97,7 +98,7 @@ pub fn morning_run(state: &mut State, keys: &ActionKeys) -> Result<(), AppError>
     state.suggestions.retain(|_, s| s.state != CardState::Open);
 
     let all = analyze_all(state);
-    post_reorders(state, keys, &all)?;
+    post_reorders(state, keys, &all, false)?;
     post_expiry(state, keys, &all)?;
     post_special(state, keys, &all)?;
 
@@ -136,18 +137,30 @@ pub fn morning_run(state: &mut State, keys: &ActionKeys) -> Result<(), AppError>
         "shop",
         agent_text(
             h,
-            "You're open 07.00–21.00 every day. Tell me about closures (\"we're closed 2 days next week\") and I'll plan orders around them.",
+            "You're open 06.00–20.00 every day. Tell me about closures (\"we're closed 2 days next week\") and I'll plan orders around them.",
         ),
     );
     Ok(())
 }
 
-fn post_reorders(state: &mut State, keys: &ActionKeys, all: &[Analysis]) -> Result<(), AppError> {
+/// Post reorder cards for the products in `all` that need ordering, grouped
+/// by supplier. Returns how many cards were posted. `quiet`: say nothing
+/// when nothing is needed (used after a stock count).
+pub fn post_reorders(
+    state: &mut State,
+    keys: &ActionKeys,
+    all: &[Analysis],
+    quiet: bool,
+) -> Result<usize, AppError> {
     let groups = reorder_groups(all, state);
+    let posted = groups.len();
     if groups.is_empty() {
+        if quiet {
+            return Ok(0);
+        }
         let id = state.next_id("m");
         state.push("reorder", agent_text(id, "Nothing needs ordering today."));
-        return Ok(());
+        return Ok(0);
     }
     for (sid, lines) in groups {
         let Some(supplier) = state.data.supplier(&sid).cloned() else {
@@ -256,7 +269,7 @@ fn post_reorders(state: &mut State, keys: &ActionKeys, all: &[Analysis]) -> Resu
             },
         );
     }
-    Ok(())
+    Ok(posted)
 }
 
 fn post_expiry(state: &mut State, keys: &ActionKeys, all: &[Analysis]) -> Result<(), AppError> {
@@ -457,11 +470,11 @@ fn stock_summary(state: &State, all: &[Analysis]) -> String {
         })
         .collect();
     if low.is_empty() {
-        return "Everything has at least four days of cover. Ask about any product, e.g. \"how much oat milk is left?\"".into();
+        return "Everything has at least four days of cover. Photograph a shelf or the fridge and I'll count it, or ask about any product, e.g. \"how much butter is left?\"".into();
     }
     low.truncate(4);
     format!(
-        "Running low: {}. Ask about any product, e.g. \"how much oat milk is left?\"",
+        "Running low: {}. Photograph a shelf or the fridge and I'll count it and work out what to order, or ask about any product, e.g. \"how much butter is left?\"",
         low.join("; ")
     )
 }
@@ -617,8 +630,9 @@ pub fn home(state: &State) -> AssistantHome {
         attention,
         commands: vec![
             command("Photograph today's leftovers", "waste"),
-            command("How much oat milk is left?", "stock"),
-            command("Menu ideas from stock", "special"),
+            command("Count stock from a photo", "stock"),
+            command("How much butter is left?", "stock"),
+            command("Ideas for day-old bakes", "special"),
             command("This week's report", "report"),
             command("What's expiring?", "expiry"),
             command("Change opening hours", "shop"),
@@ -631,7 +645,7 @@ pub fn thread(state: &State, topic: &str, vision_source: &str) -> Option<Thread>
     Some(Thread {
         topic: title.into(),
         shop: shop(state),
-        source: (topic == "waste").then(|| vision_source.to_owned()),
+        source: matches!(topic, "waste" | "stock").then(|| vision_source.to_owned()),
         messages: state.threads.get(topic).cloned().unwrap_or_default(),
     })
 }
@@ -644,6 +658,7 @@ pub fn set_card_state(state: &mut State, topic: &str, message_id: &str, new: Car
                 Message::SuggestionCard { id, card, .. } if id == message_id => card.state = new,
                 Message::WasteCard { id, card, .. } if id == message_id => card.state = new,
                 Message::DonationCard { id, card, .. } if id == message_id => card.state = new,
+                Message::CountCard { id, card, .. } if id == message_id => card.state = new,
                 Message::Text { id, actions, .. } if id == message_id => *actions = None,
                 _ => {}
             }
@@ -678,22 +693,32 @@ pub fn post_waste_session(
 ) -> Result<String, AppError> {
     use crate::engine::waste::{Condition, options};
 
-    let candidates = vision::candidates(state);
+    let candidates = vision::candidates(state, vision::Purpose::Waste);
     let session_id = state.next_id("ws");
     let mut n = 0;
-    let items = vision::ground(detections, &candidates, state.today, || {
-        n += 1;
-        format!("{session_id}:{n}")
-    });
+    let items = vision::ground(
+        detections,
+        &candidates,
+        state.today,
+        vision::Purpose::Waste,
+        || {
+            n += 1;
+            format!("{session_id}:{n}")
+        },
+    );
 
     let boxes = detections
         .iter()
-        .map(|d| DetectionBox {
-            x: d.bbox[0],
-            y: d.bbox[1],
-            w: d.bbox[2],
-            h: d.bbox[3],
-            confident: d.confidence >= vision::CONFIDENCE_THRESHOLD && d.candidate_id.is_some(),
+        .flat_map(|d| {
+            let confident =
+                d.confidence >= vision::CONFIDENCE_THRESHOLD && d.candidate_id.is_some();
+            d.boxes().into_iter().map(move |b| DetectionBox {
+                x: b[0],
+                y: b[1],
+                w: b[2],
+                h: b[3],
+                confident,
+            })
         })
         .collect();
 
@@ -768,6 +793,39 @@ pub fn post_waste_session(
     }
 
     let total = card_items.len() + usize::from(uncertain.is_some());
+    if total == 0 {
+        let unmatched: Vec<String> = items
+            .iter()
+            .filter(|i| i.product_id.is_none())
+            .map(|i| format!("{} ×{}", i.label, i.qty))
+            .collect();
+        let photo_msg = state.next_id("m");
+        state.push(
+            "waste",
+            Message::Photo {
+                id: photo_msg,
+                author: Author::Staff,
+                time: clock::hhmm(),
+                photo_label: "Leftover tray".into(),
+                photo_url: Some(format!("/photos/{photo_id}")),
+                boxes,
+            },
+        );
+        let id = state.next_id("m");
+        let text = if unmatched.is_empty() {
+            "I couldn't see any food or products in this photo. Try again closer, with the \
+             leftovers filling the frame."
+                .to_owned()
+        } else {
+            format!(
+                "I could see {}, but none of it matches a product with stock in your catalog, \
+                 so there's nothing to write off.",
+                unmatched.join(", ")
+            )
+        };
+        state.push("waste", agent_text(id, text));
+        return Ok(session_id);
+    }
     let token = sign(state, keys, "record_waste", &session_id, 1, "photo")?;
     let photo_msg = state.next_id("m");
     let card_msg = state.next_id("m");

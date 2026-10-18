@@ -106,6 +106,11 @@ pub fn execute(
             guard.claim(claims, &tenant, 1)?;
             Ok(apply_donation(state, claims, plan))
         }
+        "stock_count" => {
+            let lines = validate_count(state, claims, body)?;
+            guard.claim(claims, &tenant, 1)?;
+            apply_count(state, keys, claims, lines)
+        }
         _ => Err(AppError::TokenInvalid),
     }
 }
@@ -956,6 +961,199 @@ fn apply_donation(state: &mut State, _claims: &ActionClaims, plan: DonationPlan)
         "completed",
     );
     card
+}
+
+/* ---------- Stock count ---------- */
+
+/// The counts to apply: products the photo matched, or the merchant's pick
+/// among an unsure item's candidates. Nothing else can be adjusted.
+fn validate_count(
+    state: &State,
+    claims: &ActionClaims,
+    body: &ActionBody,
+) -> Result<Vec<(String, i64)>, AppError> {
+    let session = state
+        .sessions
+        .get(&claims.sug)
+        .ok_or(AppError::TokenInvalid)?;
+    if session.state != CardState::Open {
+        return Err(AppError::TokenUsed);
+    }
+    let allowed: std::collections::HashSet<&str> = session
+        .items
+        .iter()
+        .flat_map(|i| {
+            i.product_id
+                .iter()
+                .map(String::as_str)
+                .chain(i.candidates.iter().map(String::as_str))
+        })
+        .collect();
+    if body.lines.is_empty() {
+        return Err(AppError::BadRequest("nothing to count".into()));
+    }
+    let mut out: Vec<(String, i64)> = Vec::new();
+    for l in &body.lines {
+        if !allowed.contains(l.product_id.as_str()) {
+            return Err(AppError::BadRequest(format!(
+                "{} was not in this photo",
+                l.product_id
+            )));
+        }
+        if !(0..=9_999).contains(&l.quantity) {
+            return Err(AppError::BadRequest("a count is 0 to 9999".into()));
+        }
+        if out.iter().any(|(p, _)| *p == l.product_id) {
+            return Err(AppError::BadRequest(format!(
+                "{} is counted twice",
+                l.product_id
+            )));
+        }
+        out.push((l.product_id.clone(), l.quantity));
+    }
+    Ok(out)
+}
+
+fn apply_count(
+    state: &mut State,
+    keys: &ActionKeys,
+    claims: &ActionClaims,
+    lines: Vec<(String, i64)>,
+) -> Result<ResultCard, AppError> {
+    let today = state.today;
+    let mut changes = Vec::new();
+    let mut described = Vec::new();
+    for (pid, counted) in &lines {
+        let Some(p) = state.data.product(pid).cloned() else {
+            continue;
+        };
+        let system = state.data.total_on_hand(pid);
+        let diff = counted - system;
+        // TODO(worksh.io): adjustStock with reason `count:opname` (lot-aware
+        // once works-core accepts lotId). A shortfall comes out of the
+        // oldest lots first, which is where expired stock sits.
+        if diff < 0 {
+            state.data.take(pid, None, -diff);
+        } else if diff > 0 {
+            let id = state.next_id("ADJ");
+            state.data.lots.push(crate::shop::Lot {
+                id,
+                product_id: pid.clone(),
+                qty: diff,
+                expiry: p
+                    .shelf_life_days
+                    .map(|d| today + Duration::days(i64::from(d))),
+                received: today,
+            });
+        }
+        changes.push(
+            json!({ "product_id": pid, "system": system, "counted": counted, "variance": diff }),
+        );
+        described.push(format!(
+            "{} {}{}",
+            p.name,
+            qty(*counted, &p.unit),
+            match diff {
+                0 => String::new(),
+                d => format!(" ({d:+})"),
+            }
+        ));
+    }
+
+    // Open orders for these products were sized on the old stock: retire
+    // their cards (and their suppliers' other lines, which are re-planned
+    // together) and post fresh ones.
+    let counted: std::collections::HashSet<&str> = lines.iter().map(|(p, _)| p.as_str()).collect();
+    let stale: Vec<Suggestion> = state
+        .suggestions
+        .values()
+        .filter(|s| s.state == CardState::Open)
+        .filter(|s| match &s.kind {
+            SuggestionKind::Reorder { lines, .. } => lines
+                .iter()
+                .any(|l| counted.contains(l.product_id.as_str())),
+            _ => false,
+        })
+        .cloned()
+        .collect();
+    let mut affected: Vec<String> = lines.iter().map(|(p, _)| p.clone()).collect();
+    for s in &stale {
+        if let SuggestionKind::Reorder { lines, .. } = &s.kind {
+            affected.extend(lines.iter().map(|l| l.product_id.clone()));
+        }
+        if let Some(x) = state.suggestions.get_mut(&s.id) {
+            x.state = CardState::Replaced;
+        }
+        agent::set_card_state(state, &s.topic, &s.message_id, CardState::Replaced);
+    }
+    affected.sort();
+    affected.dedup();
+    if !stale.is_empty() {
+        agent::retire_inline_actions(state, "reorder");
+        let id = state.next_id("m");
+        state.push("reorder", note(id, "Replaced after today's stock count"));
+    }
+    let analyses: Vec<_> = affected
+        .iter()
+        .filter_map(|p| agent::analysis::analyze(state, p))
+        .collect();
+    let posted = agent::post_reorders(state, keys, &analyses, true)?;
+
+    if let Some(sess) = state.sessions.get_mut(&claims.sug) {
+        sess.state = CardState::Approved;
+    }
+    let msg = state.sessions[&claims.sug].message_id.clone();
+    agent::set_card_state(state, "stock", &msg, CardState::Approved);
+
+    let mut links = Vec::new();
+    if posted > 0 {
+        links.push(Link {
+            label: format!(
+                "{posted} {} to review",
+                crate::fmt::plural("order", posted as i64)
+            ),
+            href: "/assistant/reorder".into(),
+        });
+    }
+    links.push(Link {
+        label: "View stock".into(),
+        href: "/stock".into(),
+    });
+    let card = ResultCard {
+        title: format!(
+            "Stock updated · {} {}",
+            lines.len(),
+            crate::fmt::plural("product", lines.len() as i64)
+        ),
+        detail: if posted > 0 {
+            format!("{}. Orders recalculated.", described.join(" · "))
+        } else {
+            format!("{}. Nothing needs ordering.", described.join(" · "))
+        },
+        wa_url: None,
+        links,
+    };
+    let r = state.next_id("m");
+    state.push(
+        "stock",
+        Message::ResultCard {
+            id: r,
+            author: Author::Agent,
+            time: "Just now".into(),
+            card: card.clone(),
+        },
+    );
+    state.emit(
+        "passtok.stock.counted",
+        json!({ "location_id": "loc_main", "session_id": claims.sug, "lines": changes, "orders_posted": posted }),
+    );
+    state.record(
+        "stock_count",
+        &claims.sug,
+        json!({ "lines": changes }),
+        "adjusted",
+    );
+    Ok(card)
 }
 
 /// Percent-encoding for a query string.

@@ -104,6 +104,8 @@ pub enum CardState {
     Open,
     Approved,
     Rejected,
+    /// Superseded by a newer suggestion, e.g. after a stock count.
+    Replaced,
 }
 
 /// One product on a multi-line card (a PO grouped by supplier, FR-13).
@@ -255,6 +257,48 @@ pub struct DonationCard {
     pub receipt_href: Option<String>,
 }
 
+/// One product in a stock count: what the photo shows against the system,
+/// and what that means for ordering. All figures from the engine.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CountLine {
+    pub product_id: String,
+    pub name: String,
+    pub unit: String,
+    /// Counted from the photo; the merchant can correct it.
+    pub counted: i64,
+    /// What the ledger says is on hand.
+    pub system: i64,
+    pub difference_label: String,
+    pub cover_label: String,
+    /// "Order 12 kg · runs out Tuesday" / "Enough · lasts until Friday".
+    pub need_label: String,
+    pub severity: Severity,
+}
+
+/// Something the model saw but could not place with confidence.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UnsureCount {
+    pub item_id: String,
+    pub label: String,
+    pub quantity: i64,
+    pub candidates: Vec<Candidate>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CountCard {
+    pub label: String,
+    pub lines: Vec<CountLine>,
+    pub unsure: Vec<UnsureCount>,
+    /// Seen but not in the catalog, e.g. "stand mixer ×1".
+    pub unmatched: Vec<String>,
+    pub note: String,
+    pub token: String,
+    pub state: CardState,
+}
+
 /// One line in a thread. `type` picks the component that renders it.
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -307,6 +351,12 @@ pub enum Message {
         time: String,
         card: DonationCard,
     },
+    CountCard {
+        id: String,
+        author: Author,
+        time: String,
+        card: CountCard,
+    },
 }
 
 impl Message {
@@ -318,7 +368,8 @@ impl Message {
             | Message::SuggestionCard { id, .. }
             | Message::ResultCard { id, .. }
             | Message::WasteCard { id, .. }
-            | Message::DonationCard { id, .. } => id,
+            | Message::DonationCard { id, .. }
+            | Message::CountCard { id, .. } => id,
         }
     }
 }

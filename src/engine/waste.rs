@@ -228,7 +228,7 @@ mod tests {
         Product {
             id: "p2".into(),
             name: "Butter Croissant (box of 4)".into(),
-            category: Category::Bakery,
+            category: Category::Pastries,
             unit: "box".into(),
             sell_price: Some(60_000),
             cost: 36_000,

@@ -26,14 +26,32 @@ pub fn router() -> Router<AppState> {
 }
 
 /// Raw image bytes in, a waste session out (FR-32, FR-33).
-///
-/// Metadata is stripped before the photo is stored or sent anywhere; vision
-/// proposes, [`vision::ground`] keeps only the shop's own candidates, and the
-/// card waits for the merchant.
 async fn upload(
     State(state): State<AppState>,
     headers: HeaderMap,
     body: Bytes,
+) -> Result<Json<serde_json::Value>, AppError> {
+    ingest(state, headers, body, vision::Purpose::Waste).await
+}
+
+/// Raw image bytes in, a stock-count session out. Mounted by the stock
+/// router at `/v1/stock/photos`.
+pub async fn count(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<Json<serde_json::Value>, AppError> {
+    ingest(state, headers, body, vision::Purpose::Stock).await
+}
+
+/// Shared photo intake. Metadata is stripped before the photo is stored or
+/// sent anywhere; vision proposes, [`vision::ground`] keeps only the shop's
+/// own candidates, and the card waits for the merchant.
+async fn ingest(
+    state: AppState,
+    headers: HeaderMap,
+    body: Bytes,
+    purpose: vision::Purpose,
 ) -> Result<Json<serde_json::Value>, AppError> {
     if body.is_empty() {
         return Err(AppError::BadRequest("no photo".into()));
@@ -60,21 +78,37 @@ async fn upload(
                 content_type: content_type.into(),
             },
         );
-        (id, vision::candidates(&s), s.today)
+        (id, vision::candidates(&s, purpose), s.today)
     };
 
     // The model call happens outside the lock.
     let detections = state
         .vision
-        .analyze(&clean, content_type, &candidates, today)
+        .analyze(&clean, content_type, &candidates, today, purpose)
         .await;
 
-    let session = {
+    let (session, topic) = {
         let mut s = state.store.lock()?;
-        agent::post_waste_session(&mut s, &state.action_keys, &photo_id, &detections)?
+        match purpose {
+            vision::Purpose::Waste => (
+                agent::post_waste_session(&mut s, &state.action_keys, &photo_id, &detections)?,
+                "waste",
+            ),
+            vision::Purpose::Stock => (
+                agent::stockcount::post_count_session(
+                    &mut s,
+                    &state.action_keys,
+                    &photo_id,
+                    &detections,
+                )?,
+                "stock",
+            ),
+        }
     };
-    state.store.touched("waste");
-    Ok(Json(json!({ "sessionId": session, "photoId": photo_id })))
+    state.store.touched(topic);
+    Ok(Json(
+        json!({ "sessionId": session, "photoId": photo_id, "detected": detections.len() }),
+    ))
 }
 
 async fn photo(
